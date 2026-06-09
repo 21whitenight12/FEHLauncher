@@ -1,0 +1,20 @@
+﻿<Application x:Class="FalloutLauncher.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Светлая тема -->
+            <SolidColorBrush x:Key="WindowBackgroundLight" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="TextForegroundLight" Color="#000000"/>
+            <SolidColorBrush x:Key="ButtonBackgroundLight" Color="#E0E0E0"/>
+            <SolidColorBrush x:Key="ButtonHoverLight" Color="#D0D0D0"/>
+
+            <!-- Тёмная тема -->
+            <SolidColorBrush x:Key="WindowBackgroundDark" Color="#1E1E1E"/>
+            <SolidColorBrush x:Key="TextForegroundDark" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ButtonBackgroundDark" Color="#3C3C3C"/>
+            <SolidColorBrush x:Key="ButtonHoverDark" Color="#505050"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
