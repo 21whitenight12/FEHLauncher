@@ -15,7 +15,7 @@ namespace FalloutLauncher
         private const string PROFILE_NAME = "ChikadoZ";
         private const string MODS_FOLDER = "Main Fallout Catalog";
 
-        private bool isDarkTheme = false;
+        private bool isDarkTheme = true;
         private Process? mo2Process;
 
         public MainWindow()
@@ -27,9 +27,19 @@ namespace FalloutLauncher
         // ========== Тема и логгирование ==========
         private void BtnTheme_Click(object sender, RoutedEventArgs e)
         {
-            isDarkTheme = btnTheme.IsChecked == true;
-            btnTheme.Content = isDarkTheme ? "☀️ Светлая тема" : "🌙 Тёмная тема";
+            isDarkTheme = !isDarkTheme;
+            btnTheme.Content = isDarkTheme ? "☀️" : "🌙";
             ApplyTheme();
+        }
+
+        private void BtnDiscord_Click(object sender, RoutedEventArgs e)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "https://discord.gg/UsCu5gXCJS",
+                UseShellExecute = true
+            };
+            Process.Start(psi);
         }
 
         private void ApplyTheme()
