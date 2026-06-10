@@ -1,11 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using Microsoft.Win32;
@@ -26,6 +24,7 @@ namespace FalloutLauncher
             ApplyTheme();
         }
 
+        // ========== Тема и логгирование ==========
         private void BtnTheme_Click(object sender, RoutedEventArgs e)
         {
             isDarkTheme = btnTheme.IsChecked == true;
@@ -36,26 +35,27 @@ namespace FalloutLauncher
         private void ApplyTheme()
         {
             var bgBrush = isDarkTheme
-                ? (SolidColorBrush)Application.Current.Resources["WindowBackgroundDark"]
-                : (SolidColorBrush)Application.Current.Resources["WindowBackgroundLight"];
+                ? (SolidColorBrush)this.Resources["WindowBackgroundDark"]
+                : (SolidColorBrush)this.Resources["WindowBackgroundLight"];
             var fgBrush = isDarkTheme
-                ? (SolidColorBrush)Application.Current.Resources["TextForegroundDark"]
-                : (SolidColorBrush)Application.Current.Resources["TextForegroundLight"];
+                ? (SolidColorBrush)this.Resources["TextForegroundDark"]
+                : (SolidColorBrush)this.Resources["TextForegroundLight"];
             var btnBrush = isDarkTheme
-                ? (SolidColorBrush)Application.Current.Resources["ButtonBackgroundDark"]
-                : (SolidColorBrush)Application.Current.Resources["ButtonBackgroundLight"];
+                ? (SolidColorBrush)this.Resources["ButtonBackgroundDark"]
+                : (SolidColorBrush)this.Resources["ButtonBackgroundLight"];
             var logBrush = isDarkTheme
-                ? (SolidColorBrush)Application.Current.Resources["LogBackgroundDark"]
-                : (SolidColorBrush)Application.Current.Resources["LogBackgroundLight"];
+                ? (SolidColorBrush)this.Resources["LogBackgroundDark"]
+                : (SolidColorBrush)this.Resources["LogBackgroundLight"];
 
-            Application.Current.Resources["WindowBackground"] = bgBrush;
-            Application.Current.Resources["TextForeground"] = fgBrush;
-            Application.Current.Resources["ButtonBackground"] = btnBrush;
-            Application.Current.Resources["LogBackground"] = logBrush;
+            this.Resources["WindowBackground"] = bgBrush;
+            this.Resources["TextForeground"] = fgBrush;
+            this.Resources["ButtonBackground"] = btnBrush;
+            this.Resources["LogBackground"] = logBrush;
 
             this.Background = bgBrush;
             txtStatus.Foreground = fgBrush;
             btnLaunch.Background = btnBrush;
+            btnMo2Only.Background = btnBrush;
             btnTheme.Background = btnBrush;
         }
 
@@ -78,7 +78,7 @@ namespace FalloutLauncher
             Environment.Exit(1);
         }
 
-        // ======== Методы автоматической настройки MO2 ========
+        // ========== Автоматическая настройка MO2 ==========
         private void EnsureGamePathInMo2Ini(string mo2Dir, string gamePath)
         {
             string iniPath = Path.Combine(mo2Dir, "ModOrganizer.ini");
@@ -107,10 +107,6 @@ namespace FalloutLauncher
             Log($"Путь к игре в MO2 установлен: {gamePath}");
         }
 
-        /// <summary>
-        /// Регистрирует F4SE как глобальный исполняемый файл в ModOrganizer.ini (секция [customExecutables]).
-        /// Если запись уже есть – обновляет путь. Если нет – добавляет.
-        /// </summary>
         private void EnsureF4seExecutableInMo2Ini(string mo2Dir, string f4sePath)
         {
             string iniPath = Path.Combine(mo2Dir, "ModOrganizer.ini");
@@ -131,8 +127,6 @@ namespace FalloutLauncher
             }
 
             var lines = File.ReadAllLines(iniPath).ToList();
-
-            // Проверяем, есть ли уже запись о F4SE
             bool f4seEntryExists = false;
             foreach (var line in lines)
             {
@@ -145,13 +139,11 @@ namespace FalloutLauncher
 
             if (f4seEntryExists)
             {
-                // Обновляем путь
                 for (int i = 0; i < lines.Count; i++)
                 {
                     if (lines[i].Trim().EndsWith("\\title=F4SE"))
                     {
                         string prefix = lines[i].Trim().Substring(0, lines[i].Trim().IndexOf("\\title=F4SE"));
-                        // Ищем binary в этом же блоке
                         for (int j = i; j < lines.Count; j++)
                         {
                             if (lines[j].StartsWith(prefix + "\\binary="))
@@ -169,7 +161,6 @@ namespace FalloutLauncher
             }
             else
             {
-                // Найдём секцию [customExecutables] или создадим её
                 int customSectionIndex = lines.FindIndex(l => l.Trim().Equals("[customExecutables]", StringComparison.OrdinalIgnoreCase));
                 if (customSectionIndex == -1)
                 {
@@ -177,7 +168,6 @@ namespace FalloutLauncher
                     customSectionIndex = lines.Count - 1;
                 }
 
-                // Определим следующий свободный индекс
                 int maxIndex = 0;
                 for (int i = customSectionIndex + 1; i < lines.Count; i++)
                 {
@@ -188,7 +178,6 @@ namespace FalloutLauncher
                 }
                 int newIndex = maxIndex + 1;
 
-                // Добавляем запись после заголовка секции
                 var newEntry = new[]
                 {
                     $"{newIndex}\\title=F4SE",
@@ -200,7 +189,6 @@ namespace FalloutLauncher
                 };
                 lines.InsertRange(customSectionIndex + 1, newEntry);
 
-                // Обновим size
                 int sizeLineIndex = lines.FindIndex(l => l.Trim().StartsWith("size="));
                 if (sizeLineIndex != -1)
                     lines[sizeLineIndex] = $"size={newIndex}";
@@ -241,76 +229,81 @@ namespace FalloutLauncher
             Log($"Для профиля {PROFILE_NAME} установлен запуск f4se_loader.exe.");
         }
 
-        // ======== Основной обработчик запуска ========
+        private bool PrepareLaunchEnvironment(out string mo2Path, out string mo2Dir, out string f4sePath)
+        {
+            mo2Path = string.Empty;
+            mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
+            f4sePath = string.Empty;
+
+            Log("Поиск установленной игры Fallout 4...");
+            string? gamePath = FindGamePath();
+            if (string.IsNullOrEmpty(gamePath))
+            {
+                ShowErrorAndExit("Не удалось найти установленную игру Fallout 4.");
+                return false;
+            }
+            Log($"Игра найдена: {gamePath}");
+
+            mo2Path = Path.Combine(mo2Dir, "ModOrganizer.exe");
+            string profilesDir = Path.Combine(mo2Dir, "profiles");
+            string profilePath = Path.Combine(profilesDir, PROFILE_NAME);
+
+            if (!File.Exists(mo2Path))
+            {
+                ShowErrorAndExit($"ModOrganizer.exe не найден в папке: {mo2Dir}");
+                return false;
+            }
+            Log("MO2 найден.");
+
+            if (!Directory.Exists(profilePath))
+            {
+                ShowErrorAndExit($"Профиль \"{PROFILE_NAME}\" не найден в {profilesDir}");
+                return false;
+            }
+            Log($"Профиль {PROFILE_NAME} найден.");
+
+            string modsPath = Path.Combine(mo2Dir, "mods", MODS_FOLDER);
+            if (!Directory.Exists(modsPath))
+            {
+                ShowErrorAndExit($"Папка \"{MODS_FOLDER}\" не найдена в MO2\\mods. Root Builder не установлен.");
+                return false;
+            }
+            Log($"Папка Root Builder найдена: {modsPath}");
+
+            f4sePath = Path.Combine(modsPath, "Root", "f4se_loader.exe");
+            if (!File.Exists(f4sePath))
+            {
+                ShowErrorAndExit($"f4se_loader.exe не найден в {modsPath}\\Root");
+                return false;
+            }
+            Log("F4SE найден.");
+
+            EnsureGamePathInMo2Ini(mo2Dir, gamePath);
+            EnsureF4seExecutableInMo2Ini(mo2Dir, f4sePath);
+            EnsureF4seAsDefaultForProfile(profilePath, f4sePath);
+
+            if (Process.GetProcessesByName("ModOrganizer").Length > 0)
+            {
+                ShowErrorAndExit("MO2 уже запущен. Закройте его вручную.");
+                return false;
+            }
+            Log("MO2 не запущен.");
+
+            return true;
+        }
+
+        // ========== Запуск игры (F4SE) ==========
         private async void BtnLaunch_Click(object sender, RoutedEventArgs e)
         {
             btnLaunch.IsEnabled = false;
+            btnMo2Only.IsEnabled = false;
             txtLog.Clear();
 
             try
             {
-                // 1. Находим игру
-                Log("Поиск установленной игры Fallout 4...");
-                string? gamePath = FindGamePath();
-                if (string.IsNullOrEmpty(gamePath))
-                {
-                    ShowErrorAndExit("Не удалось найти установленную игру Fallout 4.");
+                if (!PrepareLaunchEnvironment(out string mo2Path, out string mo2Dir, out string f4sePath))
                     return;
-                }
-                Log($"Игра найдена: {gamePath}");
 
-                // 2. Пути к MO2 (лаунчер лежит в корне MO2)
-                string mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
-                string mo2Path = Path.Combine(mo2Dir, "ModOrganizer.exe");
-                string profilesDir = Path.Combine(mo2Dir, "profiles");
-                string profilePath = Path.Combine(profilesDir, PROFILE_NAME);
-
-                // 3. Проверяем MO2
-                if (!File.Exists(mo2Path))
-                {
-                    ShowErrorAndExit($"ModOrganizer.exe не найден в папке: {mo2Dir}");
-                    return;
-                }
-                Log("MO2 найден.");
-
-                if (!Directory.Exists(profilePath))
-                {
-                    ShowErrorAndExit($"Профиль \"{PROFILE_NAME}\" не найден в {profilesDir}");
-                    return;
-                }
-                Log($"Профиль {PROFILE_NAME} найден.");
-
-                // 4. Проверяем Root Builder и F4SE
-                string modsPath = Path.Combine(mo2Dir, "mods", MODS_FOLDER);
-                if (!Directory.Exists(modsPath))
-                {
-                    ShowErrorAndExit($"Папка \"{MODS_FOLDER}\" не найдена в MO2\\mods. Root Builder не установлен.");
-                    return;
-                }
-                Log($"Папка Root Builder найдена: {modsPath}");
-
-                string f4sePath = Path.Combine(modsPath, "Root", "f4se_loader.exe");
-                if (!File.Exists(f4sePath))
-                {
-                    ShowErrorAndExit($"f4se_loader.exe не найден в {modsPath}\\Root");
-                    return;
-                }
-                Log("F4SE найден.");
-
-                // 5. Автоматически прописываем настройки в конфиги MO2
-                EnsureGamePathInMo2Ini(mo2Dir, gamePath);
-                EnsureF4seExecutableInMo2Ini(mo2Dir, f4sePath);         // Регистрируем F4SE в MO2 глобально
-                EnsureF4seAsDefaultForProfile(profilePath, f4sePath);   // Ставим F4SE исполняемым по умолчанию для профиля
-
-                // 6. Проверяем, не запущен ли уже MO2
-                if (Process.GetProcessesByName("ModOrganizer").Length > 0)
-                {
-                    ShowErrorAndExit("MO2 уже запущен. Закройте его вручную.");
-                    return;
-                }
-                Log("MO2 не запущен.");
-
-                // 7. Запуск MO2 с указанием профиля и пути к f4se_loader.exe
                 string arguments = $"-p \"{PROFILE_NAME}\" \"{f4sePath}\"";
                 var startInfo = new ProcessStartInfo
                 {
@@ -338,7 +331,6 @@ namespace FalloutLauncher
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
-                // Пользователь отменил запрос UAC
                 Log("Запуск отменён пользователем (отказ в правах администратора).");
                 txtStatus.Text = "Запуск отменён";
             }
@@ -351,11 +343,70 @@ namespace FalloutLauncher
                 mo2Process?.Dispose();
                 mo2Process = null;
                 btnLaunch.IsEnabled = true;
+                btnMo2Only.IsEnabled = true;
                 if (txtStatus.Text != "Запуск отменён")
                     txtStatus.Text = "Готов к запуску";
             }
         }
 
+        // ========== Запуск только MO2 ==========
+        private async void BtnLaunchMo2_Click(object sender, RoutedEventArgs e)
+        {
+            btnLaunch.IsEnabled = false;
+            btnMo2Only.IsEnabled = false;
+            txtLog.Clear();
+
+            try
+            {
+                if (!PrepareLaunchEnvironment(out string mo2Path, out string mo2Dir, out string _))
+                    return;
+
+                string arguments = $"-p \"{PROFILE_NAME}\"";
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = mo2Path,
+                    Arguments = arguments,
+                    WorkingDirectory = mo2Dir,
+                    UseShellExecute = true,
+                    Verb = "runas",
+                    WindowStyle = ProcessWindowStyle.Normal
+                };
+
+                Log($"Запуск: {mo2Path} {arguments}");
+                Log("Запрос прав администратора...");
+
+                mo2Process = Process.Start(startInfo);
+                if (mo2Process == null)
+                {
+                    ShowErrorAndExit("Не удалось запустить MO2.");
+                    return;
+                }
+
+                Log($"MO2 запущен (PID: {mo2Process.Id}). Ожидание завершения...");
+                await mo2Process.WaitForExitAsync();
+                Log("MO2 завершил работу.");
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                Log("Запуск отменён пользователем (отказ в правах администратора).");
+                txtStatus.Text = "Запуск отменён";
+            }
+            catch (Exception ex)
+            {
+                ShowErrorAndExit($"Критическая ошибка: {ex.Message}");
+            }
+            finally
+            {
+                mo2Process?.Dispose();
+                mo2Process = null;
+                btnLaunch.IsEnabled = true;
+                btnMo2Only.IsEnabled = true;
+                if (txtStatus.Text != "Запуск отменён")
+                    txtStatus.Text = "Готов к запуску";
+            }
+        }
+
+        // ========== Поиск пути к Fallout 4 ==========
         private string? FindGamePath()
         {
             try
