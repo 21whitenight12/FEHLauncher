@@ -14,6 +14,7 @@ namespace FalloutLauncher
     {
         private const string PROFILE_NAME = "ChikadoZ";
         private const string MODS_FOLDER = "Main Fallout Catalog";
+        private const long MAX_SAVES_SIZE = 10L * 1024 * 1024 * 1024; // 10 GB
 
         private bool isDarkTheme = true;
         private Process? mo2Process;
@@ -22,6 +23,7 @@ namespace FalloutLauncher
         {
             InitializeComponent();
             ApplyTheme();
+            UpdateSavesSizeDisplay();
         }
 
         // ========== Тема и логгирование ==========
@@ -56,17 +58,22 @@ namespace FalloutLauncher
             var logBrush = isDarkTheme
                 ? (SolidColorBrush)this.Resources["LogBackgroundDark"]
                 : (SolidColorBrush)this.Resources["LogBackgroundLight"];
+            var trackBrush = isDarkTheme
+                ? (SolidColorBrush)this.Resources["ProgressTrackDark"]
+                : (SolidColorBrush)this.Resources["ProgressTrackLight"];
 
             this.Resources["WindowBackground"] = bgBrush;
             this.Resources["TextForeground"] = fgBrush;
             this.Resources["ButtonBackground"] = btnBrush;
             this.Resources["LogBackground"] = logBrush;
+            this.Resources["ProgressTrack"] = trackBrush;
 
             this.Background = bgBrush;
             txtStatus.Foreground = fgBrush;
             btnLaunch.Background = btnBrush;
             btnMo2Only.Background = btnBrush;
-            btnTheme.Background = btnBrush;
+            btnOpenSaves.Background = btnBrush;
+            btnMods.Background = btnBrush;
         }
 
         private void Log(string message)
@@ -338,6 +345,7 @@ namespace FalloutLauncher
                 Log($"MO2 запущен (PID: {mo2Process.Id}). Ожидание завершения...");
                 await mo2Process.WaitForExitAsync();
                 Log("MO2 завершил работу. Можно запускать снова.");
+                UpdateSavesSizeDisplay();
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
@@ -395,6 +403,7 @@ namespace FalloutLauncher
                 Log($"MO2 запущен (PID: {mo2Process.Id}). Ожидание завершения...");
                 await mo2Process.WaitForExitAsync();
                 Log("MO2 завершил работу.");
+                UpdateSavesSizeDisplay();
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
             {
@@ -485,6 +494,66 @@ namespace FalloutLauncher
             }
 
             return null;
+        }
+
+        // ========== Расчёт размера папки сохранений ==========
+        private long GetDirectorySize(string path)
+        {
+            if (!Directory.Exists(path)) return 0;
+
+            long size = 0;
+            try
+            {
+                foreach (string file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+                {
+                    try { size += new FileInfo(file).Length; }
+                    catch { }
+                }
+            }
+            catch { }
+            return size;
+        }
+
+        private void UpdateSavesSizeDisplay()
+        {
+            string savesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "profiles", PROFILE_NAME, "saves");
+            long sizeBytes = GetDirectorySize(savesPath);
+            double percentage = Math.Min(1.0, (double)sizeBytes / MAX_SAVES_SIZE);
+
+            pbSaves.Value = percentage * 100;
+            double sizeGB = sizeBytes / (1024.0 * 1024.0 * 1024.0);
+            lblSavesSize.Text = $"{sizeGB:F2} GB / 10.00 GB";
+
+            // Цвет прогресс-бара в зависимости от заполненности
+            if (percentage >= 0.8)
+                pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36)); // красный
+            else if (percentage >= 0.5)
+                pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)); // оранжевый
+            else
+                pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)); // зелёный
+        }
+
+        private void BtnOpenSaves_Click(object sender, RoutedEventArgs e)
+        {
+            string savesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "profiles", PROFILE_NAME, "saves");
+            if (Directory.Exists(savesPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = savesPath,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                Log("Папка saves не найдена.");
+            }
+        }
+
+        private void BtnMods_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("Функция управления модами в разработке.",
+                "В разработке", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 }

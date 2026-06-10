@@ -1,4 +1,4 @@
-﻿<Window x:Class="FalloutLauncher.MainWindow"
+<Window x:Class="FalloutLauncher.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="FNH Launcher by WhiteNight v1.0.1"
@@ -8,27 +8,26 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource WindowBackground}">
 
-    <!-- РЕСУРСЫ ОКНА (начальные значения + тёмные/светлые кисти) -->
+    <!-- Window Resources -->
     <Window.Resources>
-        <!-- Тёмная тема -->
         <SolidColorBrush x:Key="WindowBackgroundDark" Color="#FF1E1E1E"/>
         <SolidColorBrush x:Key="TextForegroundDark" Color="#FFE0E0E0"/>
         <SolidColorBrush x:Key="ButtonBackgroundDark" Color="#FF3A3A3A"/>
         <SolidColorBrush x:Key="LogBackgroundDark" Color="#FF2A2A2A"/>
+        <SolidColorBrush x:Key="ProgressTrackDark" Color="#FF1E1E1E"/>
 
-        <!-- Светлая тема -->
         <SolidColorBrush x:Key="WindowBackgroundLight" Color="#FFF0F0F0"/>
         <SolidColorBrush x:Key="TextForegroundLight" Color="#FF1A1A1A"/>
         <SolidColorBrush x:Key="ButtonBackgroundLight" Color="#FFD0D0D0"/>
         <SolidColorBrush x:Key="LogBackgroundLight" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="ProgressTrackLight" Color="#FFFFFFFF"/>
 
-        <!-- Текущие значения (по умолчанию тёмная тема) -->
         <SolidColorBrush x:Key="WindowBackground" Color="#FF1E1E1E"/>
         <SolidColorBrush x:Key="TextForeground" Color="#FFE0E0E0"/>
         <SolidColorBrush x:Key="ButtonBackground" Color="#FF3A3A3A"/>
         <SolidColorBrush x:Key="LogBackground" Color="#FF2A2A2A"/>
+        <SolidColorBrush x:Key="ProgressTrack" Color="#FF1E1E1E"/>
 
-        <!-- Стиль кнопок: на hover текст чёрный, чтобы не терялся на светлом фоне в тёмной теме -->
         <Style x:Key="MainButtonStyle" TargetType="Button">
             <Setter Property="Foreground" Value="{DynamicResource TextForeground}"/>
             <Style.Triggers>
@@ -48,9 +47,10 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Верхняя панель с кнопками -->
+        <!-- Top buttons -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10" Grid.ColumnSpan="2">
             <Button x:Name="btnLaunch" Content="🚀 Запустить игру (F4SE)" 
                     Width="180" Height="35" 
@@ -70,16 +70,15 @@
 
             <TextBlock Text="  " Width="10"/>
 
-            <Button x:Name="btnTheme" Content="☀️" 
-                    Width="40" Height="35"
-                    Click="BtnTheme_Click"
+            <Button x:Name="btnMods" Content="📦 Моды" 
+                    Width="95" Height="35"
+                    Click="BtnMods_Click"
                     Background="{DynamicResource ButtonBackground}"
                     Style="{StaticResource MainButtonStyle}"
-                    FontSize="14"
-                    BorderThickness="0"/>
+                    FontSize="12"/>
         </StackPanel>
 
-        <!-- Лог -->
+        <!-- Log -->
         <TextBox x:Name="txtLog" Grid.Row="1"
                  IsReadOnly="True"
                  VerticalScrollBarVisibility="Auto"
@@ -91,8 +90,47 @@
                  TextWrapping="Wrap"
                  AcceptsReturn="True" Grid.ColumnSpan="2"/>
 
-        <!-- Статусная строка -->
-        <StatusBar Grid.Row="2" Margin="0,10,0,0"
+        <!-- Saves panel -->
+        <Border x:Name="borderSaves" Grid.Row="2" Grid.ColumnSpan="2"
+                Background="{DynamicResource ButtonBackground}"
+                CornerRadius="3" Padding="6,2" Margin="0,0,0,5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="lblSavesIcon" Text="💾 Saves: "
+                           Foreground="{DynamicResource TextForeground}"
+                           VerticalAlignment="Center" FontSize="12" Margin="3,0,0,0"/>
+                <Border Grid.Column="1"
+                        BorderThickness="1.5" BorderBrush="#FF555555"
+                        CornerRadius="1.5" Height="12"
+                        VerticalAlignment="Center" Margin="5,0,5,0"
+                        Background="{DynamicResource ProgressTrack}">
+                    <ProgressBar x:Name="pbSaves"
+                                 Minimum="0" Maximum="100"
+                                 BorderThickness="0"
+                                 Background="{DynamicResource ProgressTrack}"
+                                 Foreground="#FF4CAF50"
+                                 Margin="1.5,0"/>
+                </Border>
+                <TextBlock x:Name="lblSavesSize" Grid.Column="2"
+                           Text="0.00 GB / 10.00 GB"
+                           Foreground="{DynamicResource TextForeground}"
+                           VerticalAlignment="Center" FontSize="11" Margin="0,0,5,0"/>
+                <Button x:Name="btnOpenSaves" Grid.Column="3"
+                        Content="📁" Width="26" Height="20"
+                        Click="BtnOpenSaves_Click"
+                        Background="{DynamicResource ButtonBackground}"
+                        Style="{StaticResource MainButtonStyle}"
+                        FontSize="11" Margin="0,0,3,0" Padding="0"/>
+            </Grid>
+        </Border>
+
+        <!-- Status bar -->
+        <StatusBar Grid.Row="3" Margin="0,10,0,0"
                    Background="{DynamicResource ButtonBackground}"
                    Foreground="{DynamicResource TextForeground}" Grid.ColumnSpan="2">
             <StatusBar.ItemsPanel>
@@ -100,6 +138,7 @@
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                     </Grid>
@@ -109,11 +148,18 @@
                 <TextBlock x:Name="txtStatus" Text="Готов к запуску"/>
             </StatusBarItem>
             <StatusBarItem Grid.Column="1">
+                <Button x:Name="btnTheme" Content="☀️" 
+                        Width="28" Height="22"
+                        Click="BtnTheme_Click"
+                        Background="Transparent" BorderThickness="1"
+                        FontSize="11" Cursor="Hand"/>
+            </StatusBarItem>
+            <StatusBarItem Grid.Column="2">
                 <Button x:Name="btnDiscord" Content="Discord"
                         Cursor="Hand" Width="80"
-                        Background="Transparent" BorderThickness="0"
+                        Background="Transparent" BorderThickness="1"
                         Foreground="#FF7289DA" FontSize="12"
-                        Click="BtnDiscord_Click"/>
+                        Click="BtnDiscord_Click" BorderBrush="Gray"/>
             </StatusBarItem>
         </StatusBar>
     </Grid>
