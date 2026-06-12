@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +10,7 @@ namespace FalloutLauncher
     public partial class ModsWindow : Window
     {
         private readonly string _modlistPath;
+        private bool _isDarkTheme = true;
 
         // Internal representation of each line in modlist.txt
         private class ModLine
@@ -21,9 +24,11 @@ namespace FalloutLauncher
 
         private readonly List<ModLine> _lines = new();
 
-        public ModsWindow(string mo2Dir, string profileName)
+        public ModsWindow(string mo2Dir, string profileName, bool isDarkTheme = true)
         {
             InitializeComponent();
+            _isDarkTheme = isDarkTheme;
+            ApplyTheme();
 
             _modlistPath = Path.Combine(mo2Dir, "profiles", profileName, "modlist.txt");
 
@@ -36,6 +41,40 @@ namespace FalloutLauncher
             }
 
             LoadMods();
+        }
+
+        private void ApplyTheme()
+        {
+            Color bg, surface, card, border, textPrimary, textSecondary;
+
+            if (_isDarkTheme)
+            {
+                bg = Color.FromRgb(0x0D, 0x11, 0x17);
+                surface = Color.FromRgb(0x16, 0x1B, 0x22);
+                card = Color.FromRgb(0x21, 0x26, 0x2D);
+                border = Color.FromRgb(0x30, 0x36, 0x3D);
+                textPrimary = Color.FromRgb(0xE6, 0xED, 0xF3);
+                textSecondary = Color.FromRgb(0x8B, 0x94, 0x9E);
+            }
+            else
+            {
+                // Light theme — тёплая бумажная палитра как в MainWindow
+                bg = Color.FromRgb(0xF7, 0xF6, 0xF3);
+                surface = Color.FromRgb(0xF2, 0xF0, 0xEB);
+                card = Color.FromRgb(0xFA, 0xF9, 0xF6);
+                border = Color.FromRgb(0xCF, 0xC9, 0xBE);
+                textPrimary = Color.FromRgb(0x26, 0x25, 0x22);
+                textSecondary = Color.FromRgb(0x6B, 0x6B, 0x68);
+            }
+
+            Resources["BgBrush"] = new SolidColorBrush(bg);
+            Resources["SurfaceBrush"] = new SolidColorBrush(surface);
+            Resources["CardBrush"] = new SolidColorBrush(card);
+            Resources["BorderBrush"] = new SolidColorBrush(border);
+            Resources["TextPrimaryBrush"] = new SolidColorBrush(textPrimary);
+            Resources["TextSecondaryBrush"] = new SolidColorBrush(textSecondary);
+
+            this.Background = new SolidColorBrush(bg);
         }
 
         private void LoadMods()
@@ -123,7 +162,8 @@ namespace FalloutLauncher
                     {
                         Content = line.Name,
                         IsChecked = line.IsEnabled,
-                        Foreground = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0)),
+                        FontFamily = (FontFamily)FindResource("FontPrimary"),
+                        Foreground = (Brush)FindResource("TextPrimaryBrush"),
                         FontSize = 13,
                         Margin = new Thickness(4, 2, 0, 2),
                         VerticalContentAlignment = VerticalAlignment.Center

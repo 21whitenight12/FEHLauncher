@@ -1,11 +1,13 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Input;
 using Microsoft.Win32;
 
 namespace FalloutLauncher
@@ -18,63 +20,269 @@ namespace FalloutLauncher
 
         private bool isDarkTheme = true;
         private Process? mo2Process;
+        private bool isMaximized = false;
+        private WindowState savedState = WindowState.Normal;
 
         public MainWindow()
         {
             InitializeComponent();
+            LoadWindowsAccentColor();
             ApplyTheme();
             UpdateSavesSizeDisplay();
+
+            // Bug 4: Подставляем имя пользователя системы
+            string userName = Environment.UserName;
+            txtWelcome.Text = $"С возвращением, {userName}!";
+
+            // Автопоиск игры при старте лаунчера
+            Log("Поиск установленной игры Fallout 4...");
+            string? gamePath = FindGamePath();
+            if (!string.IsNullOrEmpty(gamePath))
+                txtGamePath.Text = $"📂 {gamePath}";
+            else
+                Log("Игра не найдена автоматически. Выберите папку вручную при запуске.");
         }
 
-        // ========== Тема и логгирование ==========
+        // ==================================================================
+        // CUSTOM WINDOW CHROME — close, minimize, maximize, drag
+        // ==================================================================
+
+        private void BtnClose_Click(object sender, RoutedEventArgs e) => Close();
+
+        private void BtnMinimize_Click(object sender, RoutedEventArgs e) =>
+            WindowState = WindowState.Minimized;
+
+        private void BtnMaximize_Click(object sender, RoutedEventArgs e) => ToggleMaximize();
+
+        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Left && e.ClickCount == 1)
+                this.DragMove();
+        }
+
+        private void Window_StateChanged(object sender, EventArgs e)
+        {
+            if (WindowState == WindowState.Maximized)
+            {
+                isMaximized = true;
+                UpdateMaximizeIcon(false);
+                // Compensate for maximized window border offset
+                windowFrame.Margin = new Thickness(7);
+            }
+            else
+            {
+                isMaximized = false;
+                UpdateMaximizeIcon(true);
+                windowFrame.Margin = new Thickness(0);
+            }
+        }
+
+        private void UpdateMaximizeIcon(bool isNormal)
+        {
+            if (btnMaximize == null) return;
+            var rect = maxIcon;
+            if (rect == null) return;
+
+            if (isNormal)
+            {
+                // Maximize icon: hollow square
+                rect.Width = 10;
+                rect.Height = 10;
+                rect.Stroke = FindResource("TextPrimaryBrush") as Brush ?? Brushes.White;
+                rect.Fill = Brushes.Transparent;
+                btnMaximize.ToolTip = "Развернуть";
+            }
+            else
+            {
+                // Restore icon: two overlapping squares
+                rect.Width = 10;
+                rect.Height = 10;
+                rect.Stroke = FindResource("TextPrimaryBrush") as Brush ?? Brushes.White;
+                rect.Fill = Brushes.Transparent;
+                btnMaximize.ToolTip = "Восстановить";
+            }
+        }
+
+        private void ToggleMaximize()
+        {
+            if (isMaximized)
+            {
+                WindowState = savedState;
+            }
+            else
+            {
+                savedState = WindowState;
+                WindowState = WindowState.Maximized;
+            }
+        }
+
+        // ==================================================================
+        // SIDEBAR NAVIGATION
+        // ==================================================================
+
+        private void Nav_Checked(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+
+            var radio = sender as RadioButton;
+            if (radio == null) return;
+
+            // For now, only "Mods" tab opens the ModsWindow as a dialog.
+            // Home / Saves / About stay on the main page.
+            if (radio == navMods)
+            {
+                BtnMods_Click(sender, e);
+                // Re-check Home after returning from ModsWindow
+                navHome.IsChecked = true;
+            }
+            else if (radio == navSaves)
+            {
+                BtnOpenSaves_Click(sender, e);
+                navHome.IsChecked = true;
+            }
+            else if (radio == navAbout)
+            {
+                ShowAbout();
+                navHome.IsChecked = true;
+            }
+        }
+
+        private void ShowAbout()
+        {
+            string mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
+            string gamePath = FindGamePath() ?? "не найден";
+
+            MessageBox.Show(
+                $"FNH Launcher by WhiteNight v1.1.0\n\n" +
+                $"Лаунчер для Fallout 4 с поддержкой MO2 и F4SE\n\n" +
+                $"Профиль: {PROFILE_NAME}\n" +
+                $"MO2: {mo2Dir}\n" +
+                $"Игра: {gamePath}\n\n" +
+                $"Discord: discord.gg/UsCu5gXCJS",
+                "О программе",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+
+        // ==================================================================
+        // LOG COLLAPSIBLE
+        // ==================================================================
+
+        private void LogToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            // Guard against early calls during XAML loading before logContent is wired up
+            if (logContent == null) return;
+
+            bool isVisible = btnToggleLog.IsChecked == true;
+            logContent.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+
+            // Adjust log section height
+            if (isVisible)
+                logContent.Height = 140;
+            else
+                logContent.Height = 0;
+        }
+
+        // ==================================================================
+        // THEME SYSTEM
+        // ==================================================================
+
         private void BtnTheme_Click(object sender, RoutedEventArgs e)
         {
             isDarkTheme = !isDarkTheme;
-            btnTheme.Content = isDarkTheme ? "☀️" : "🌙";
             ApplyTheme();
         }
 
-        private void BtnDiscord_Click(object sender, RoutedEventArgs e)
+        private void LoadWindowsAccentColor()
         {
-            var psi = new ProcessStartInfo
+            try
             {
-                FileName = "https://discord.gg/UsCu5gXCJS",
-                UseShellExecute = true
-            };
-            Process.Start(psi);
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM");
+                if (key != null)
+                {
+                    int accentColor = (int)(key.GetValue("AccentColor", 0) ?? 0);
+                    if (accentColor != 0)
+                    {
+                        // Registry хранит в формате ABGR (0xAABBGGRR), WPF нужен ARGB (0xAARRGGBB)
+                        byte a = (byte)((accentColor >> 24) & 0xFF);
+                        byte b = (byte)((accentColor >> 16) & 0xFF);
+                        byte g = (byte)((accentColor >> 8) & 0xFF);
+                        byte r = (byte)(accentColor & 0xFF);
+                        var winAccent = Color.FromArgb(a, r, g, b);
+                        Resources["AccentColor"] = winAccent;
+                        Resources["AccentBrush"] = new SolidColorBrush(winAccent);
+                        Log($"Акцентный цвет Windows: #{winAccent.R:X2}{winAccent.G:X2}{winAccent.B:X2}");
+                    }
+                }
+            }
+            catch { }
         }
 
         private void ApplyTheme()
         {
-            var bgBrush = isDarkTheme
-                ? (SolidColorBrush)this.Resources["WindowBackgroundDark"]
-                : (SolidColorBrush)this.Resources["WindowBackgroundLight"];
-            var fgBrush = isDarkTheme
-                ? (SolidColorBrush)this.Resources["TextForegroundDark"]
-                : (SolidColorBrush)this.Resources["TextForegroundLight"];
-            var btnBrush = isDarkTheme
-                ? (SolidColorBrush)this.Resources["ButtonBackgroundDark"]
-                : (SolidColorBrush)this.Resources["ButtonBackgroundLight"];
-            var logBrush = isDarkTheme
-                ? (SolidColorBrush)this.Resources["LogBackgroundDark"]
-                : (SolidColorBrush)this.Resources["LogBackgroundLight"];
-            var trackBrush = isDarkTheme
-                ? (SolidColorBrush)this.Resources["ProgressTrackDark"]
-                : (SolidColorBrush)this.Resources["ProgressTrackLight"];
+            // Choose color sets
+            Color bg, surface, card, border, textPrimary, textSecondary, logBg, titleBg;
 
-            this.Resources["WindowBackground"] = bgBrush;
-            this.Resources["TextForeground"] = fgBrush;
-            this.Resources["ButtonBackground"] = btnBrush;
-            this.Resources["LogBackground"] = logBrush;
-            this.Resources["ProgressTrack"] = trackBrush;
+            if (isDarkTheme)
+            {
+                bg = (Color)FindResource("DarkBg");
+                surface = (Color)FindResource("DarkSurface");
+                card = (Color)FindResource("DarkCard");
+                border = (Color)FindResource("DarkBorder");
+                textPrimary = (Color)FindResource("DarkTextPrimary");
+                textSecondary = (Color)FindResource("DarkTextSecondary");
+                logBg = (Color)FindResource("DarkLogBg");
+                titleBg = (Color)FindResource("DarkTitleBg");
+                btnThemeIcon.Text = "🌙";
+            }
+            else
+            {
+                bg = (Color)FindResource("LightBg");
+                surface = (Color)FindResource("LightSurface");
+                card = (Color)FindResource("LightCard");
+                border = (Color)FindResource("LightBorder");
+                textPrimary = (Color)FindResource("LightTextPrimary");
+                textSecondary = (Color)FindResource("LightTextSecondary");
+                logBg = (Color)FindResource("LightLogBg");
+                titleBg = (Color)FindResource("LightTitleBg");
+                btnThemeIcon.Text = "☀️";
+            }
 
-            this.Background = bgBrush;
-            txtStatus.Foreground = fgBrush;
-            btnLaunch.Background = btnBrush;
-            btnMo2Only.Background = btnBrush;
-            btnOpenSaves.Background = btnBrush;
-            btnMods.Background = btnBrush;
+            // Swap dynamic brushes
+            SetBrush("BgBrush", bg);
+            SetBrush("SurfaceBrush", surface);
+            SetBrush("CardBrush", card);
+            SetBrush("BorderBrush", border);
+            SetBrush("TextPrimaryBrush", textPrimary);
+            SetBrush("TextSecondaryBrush", textSecondary);
+            SetBrush("LogBgBrush", logBg);
+            SetBrush("TitleBgBrush", titleBg);
+
+            // Force re-draw for window frame border
+            var fg = isDarkTheme
+                ? (Color)FindResource("DarkTextPrimary")
+                : (Color)FindResource("LightTextPrimary");
+            windowFrame.BorderBrush = new SolidColorBrush(border);
+            windowFrame.Background = new SolidColorBrush(bg);
+
+            // Update maximize icon colors
+            UpdateMaximizeIcon(!isMaximized);
+
+            // Swap hover overlay color (white for dark, black for light)
+            Resources["HoverOverlayColor"] = isDarkTheme
+                ? Color.FromRgb(0xFF, 0xFF, 0xFF)
+                : Color.FromRgb(0x00, 0x00, 0x00);
         }
+
+        private void SetBrush(string key, Color color)
+        {
+            // Always create a new brush — XAML-loaded brushes may be frozen/read-only
+            Resources[key] = new SolidColorBrush(color);
+        }
+
+        // ==================================================================
+        // LOGGING
+        // ==================================================================
 
         private void Log(string message)
         {
@@ -84,7 +292,7 @@ namespace FalloutLauncher
             {
                 txtLog.AppendText(logEntry);
                 txtLog.ScrollToEnd();
-                txtStatus.Text = message;
+                lblStatusBar.Text = message;
             });
         }
 
@@ -95,7 +303,10 @@ namespace FalloutLauncher
             Environment.Exit(1);
         }
 
-        // ========== Автоматическая настройка MO2 ==========
+        // ==================================================================
+        // MO2 AUTO-CONFIGURATION (unchanged from original)
+        // ==================================================================
+
         private void EnsureGamePathInMo2Ini(string mo2Dir, string gamePath)
         {
             string iniPath = Path.Combine(mo2Dir, "ModOrganizer.ini");
@@ -223,8 +434,8 @@ namespace FalloutLauncher
             string settingsIni = Path.Combine(profilePath, "settings.ini");
             if (!File.Exists(settingsIni))
             {
-                File.WriteAllText(settingsIni, $"custom_executable={f4seFullPath}\r\n");
-                Log($"Создан settings.ini для профиля с f4se_loader.exe");
+                File.WriteAllText(settingsIni, $"custom_executable=F4SE\r\n");
+                Log($"Создан settings.ini для профиля с f4se_loader.exe ({f4seFullPath})");
                 return;
             }
 
@@ -234,23 +445,29 @@ namespace FalloutLauncher
             {
                 if (lines[i].StartsWith("custom_executable="))
                 {
-                    lines[i] = $"custom_executable={f4seFullPath}";
+                    lines[i] = $"custom_executable=F4SE";
                     found = true;
                     break;
                 }
             }
             if (!found)
-                lines.Add($"custom_executable={f4seFullPath}");
+                lines.Add($"custom_executable=F4SE");
 
             File.WriteAllLines(settingsIni, lines);
-            Log($"Для профиля {PROFILE_NAME} установлен запуск f4se_loader.exe.");
+            Log($"Для профиля {PROFILE_NAME} установлен запуск f4se_loader.exe ({f4seFullPath}).");
         }
 
-        private bool PrepareLaunchEnvironment(out string mo2Path, out string mo2Dir, out string f4sePath)
+        // ==================================================================
+        // LAUNCH LOGIC
+        // ==================================================================
+
+        /// <summary>
+        /// Базовая подготовка — проверка игры, MO2, профиля. БЕЗ поиска F4SE.
+        /// </summary>
+        private bool PrepareBasicEnvironment(out string mo2Path, out string mo2Dir)
         {
             mo2Path = string.Empty;
             mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
-            f4sePath = string.Empty;
 
             Log("Поиск установленной игры Fallout 4...");
             string? gamePath = FindGamePath();
@@ -260,6 +477,9 @@ namespace FalloutLauncher
                 return false;
             }
             Log($"Игра найдена: {gamePath}");
+
+            // Update game path display in welcome card
+            txtGamePath.Text = $"📂 {gamePath}";
 
             mo2Path = Path.Combine(mo2Dir, "ModOrganizer.exe");
             string profilesDir = Path.Combine(mo2Dir, "profiles");
@@ -282,34 +502,104 @@ namespace FalloutLauncher
             string modsPath = Path.Combine(mo2Dir, "mods", MODS_FOLDER);
             if (!Directory.Exists(modsPath))
             {
-                ShowErrorAndExit($"Папка \"{MODS_FOLDER}\" не найдена в MO2\\mods. Root Builder не установлен.");
-                return false;
+                Log($"Папка модов \"{MODS_FOLDER}\" не найдена — будет создана.");
+                Directory.CreateDirectory(modsPath);
             }
-            Log($"Папка Root Builder найдена: {modsPath}");
 
-            f4sePath = Path.Combine(modsPath, "Root", "f4se_loader.exe");
-            if (!File.Exists(f4sePath))
-            {
-                ShowErrorAndExit($"f4se_loader.exe не найден в {modsPath}\\Root");
-                return false;
-            }
-            Log("F4SE найден.");
-
+            // Устанавливаем путь к игре в MO2
             EnsureGamePathInMo2Ini(mo2Dir, gamePath);
-            EnsureF4seExecutableInMo2Ini(mo2Dir, f4sePath);
-            EnsureF4seAsDefaultForProfile(profilePath, f4sePath);
-
-            if (Process.GetProcessesByName("ModOrganizer").Length > 0)
-            {
-                ShowErrorAndExit("MO2 уже запущен. Закройте его вручную.");
-                return false;
-            }
-            Log("MO2 не запущен.");
 
             return true;
         }
 
-        // ========== Запуск игры (F4SE) ==========
+        /// <summary>
+        /// Подготовка F4SE — поиск f4se_loader.exe и настройка MO2.
+        /// Возвращает false если F4SE не найден (но НЕ завершает приложение).
+        /// </summary>
+        private bool PrepareF4SEEnvironment(out string f4sePath)
+        {
+            string mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
+            string? gamePath = FindGamePath();
+            f4sePath = string.Empty;
+
+            // Расширенный поиск f4se_loader.exe
+            string[] searchPaths = new[]
+            {
+                Path.Combine(gamePath ?? "", "f4se_loader.exe"),
+                Path.Combine(mo2Dir, "f4se_loader.exe"),
+                Path.Combine(mo2Dir, "mods", MODS_FOLDER, "f4se_loader.exe"),
+                Path.Combine(mo2Dir, "mods", MODS_FOLDER, "Root", "f4se_loader.exe"),
+            };
+
+            // Также ищем рекурсивно в папке mods (включая подпапку Root)
+            string modsBase = Path.Combine(mo2Dir, "mods");
+            if (Directory.Exists(modsBase))
+            {
+                try
+                {
+                    // Сначала проверяем корневые папки модов
+                    foreach (string modDir in Directory.GetDirectories(modsBase))
+                    {
+                        string f4seCandidate = Path.Combine(modDir, "f4se_loader.exe");
+                        if (File.Exists(f4seCandidate))
+                        {
+                            f4sePath = f4seCandidate;
+                            break;
+                        }
+                        // Также проверяем подпапку Root\ внутри каждой папки мода
+                        string rootCandidate = Path.Combine(modDir, "Root", "f4se_loader.exe");
+                        if (File.Exists(rootCandidate))
+                        {
+                            f4sePath = rootCandidate;
+                            break;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // Если не нашли в mods, проверяем основные пути
+            if (string.IsNullOrEmpty(f4sePath))
+            {
+                foreach (var sp in searchPaths)
+                {
+                    if (!string.IsNullOrEmpty(sp) && File.Exists(sp))
+                    {
+                        f4sePath = sp;
+                        break;
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(f4sePath))
+            {
+                Log("ВНИМАНИЕ: f4se_loader.exe не найден. Запуск без F4SE.");
+                return false;
+            }
+
+            Log($"F4SE найден: {f4sePath}");
+
+            // Настраиваем MO2 для F4SE
+            if (gamePath != null)
+                EnsureF4seExecutableInMo2Ini(mo2Dir, f4sePath);
+
+            string profilesDir = Path.Combine(mo2Dir, "profiles");
+            string profilePath = Path.Combine(profilesDir, PROFILE_NAME);
+            if (Directory.Exists(profilePath))
+                EnsureF4seAsDefaultForProfile(profilePath, f4sePath);
+
+            return true;
+        }
+
+        [Obsolete("Используйте PrepareBasicEnvironment + PrepareF4SEEnvironment")]
+        private bool PrepareLaunchEnvironment(out string mo2Path, out string mo2Dir, out string f4sePath)
+        {
+            mo2Path = string.Empty;
+            mo2Dir = string.Empty;
+            f4sePath = string.Empty;
+            return false;
+        }
+
         private async void BtnLaunch_Click(object sender, RoutedEventArgs e)
         {
             btnLaunch.IsEnabled = false;
@@ -318,9 +608,17 @@ namespace FalloutLauncher
 
             try
             {
-                if (!PrepareLaunchEnvironment(out string mo2Path, out string mo2Dir, out string f4sePath))
+                if (!PrepareBasicEnvironment(out string mo2Path, out string mo2Dir))
                     return;
 
+                // Ищем F4SE — если не нашли, не запускаем
+                if (!PrepareF4SEEnvironment(out string f4sePath))
+                {
+                    ShowErrorAndExit("f4se_loader.exe не найден. Запуск невозможен без F4SE.");
+                    return;
+                }
+
+                // Git-подход: -p "ProfileName" "f4sePath"
                 string arguments = $"-p \"{PROFILE_NAME}\" \"{f4sePath}\"";
                 var startInfo = new ProcessStartInfo
                 {
@@ -367,7 +665,6 @@ namespace FalloutLauncher
             }
         }
 
-        // ========== Запуск только MO2 ==========
         private async void BtnLaunchMo2_Click(object sender, RoutedEventArgs e)
         {
             btnLaunch.IsEnabled = false;
@@ -376,9 +673,10 @@ namespace FalloutLauncher
 
             try
             {
-                if (!PrepareLaunchEnvironment(out string mo2Path, out string mo2Dir, out string _))
+                if (!PrepareBasicEnvironment(out string mo2Path, out string mo2Dir))
                     return;
 
+                // Запуск только MO2 — без F4SE, только выбор профиля
                 string arguments = $"-p \"{PROFILE_NAME}\"";
                 var startInfo = new ProcessStartInfo
                 {
@@ -402,7 +700,7 @@ namespace FalloutLauncher
 
                 Log($"MO2 запущен (PID: {mo2Process.Id}). Ожидание завершения...");
                 await mo2Process.WaitForExitAsync();
-                Log("MO2 завершил работу.");
+                Log("MO2 завершил работу. Можно запускать снова.");
                 UpdateSavesSizeDisplay();
             }
             catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
@@ -425,22 +723,80 @@ namespace FalloutLauncher
             }
         }
 
-        // ========== Поиск пути к Fallout 4 ==========
+        private void BtnMods_Click(object sender, RoutedEventArgs e)
+        {
+            string mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
+            string profilesDir = Path.Combine(mo2Dir, "profiles");
+            string profilePath = Path.Combine(profilesDir, PROFILE_NAME);
+            string modlistPath = Path.Combine(profilePath, "modlist.txt");
+
+            if (!File.Exists(modlistPath))
+            {
+                Log($"Файл modlist.txt не найден: {modlistPath}");
+                MessageBox.Show($"Файл модов не найден для профиля \"{PROFILE_NAME}\".\n" +
+                                $"Запустите MO2 хотя бы один раз, чтобы создать modlist.txt.",
+                    "Файл не найден", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            Log("Открытие управления модами...");
+            var modsWindow = new ModsWindow(mo2Dir, PROFILE_NAME, isDarkTheme)
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+            modsWindow.ShowDialog();
+            Log("Управление модами закрыто.");
+        }
+
+        private void BtnDiscord_Click(object sender, RoutedEventArgs e)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "https://discord.gg/UsCu5gXCJS",
+                UseShellExecute = true
+            };
+            Process.Start(psi);
+        }
+
+        private void BtnOpenSaves_Click(object sender, RoutedEventArgs e)
+        {
+            string savesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "profiles", PROFILE_NAME, "saves");
+            if (Directory.Exists(savesPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = savesPath,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                Log("Папка saves не найдена.");
+            }
+        }
+
+        // ==================================================================
+        // GAME PATH DETECTION (unchanged from original)
+        // ==================================================================
+
         private string? FindGamePath()
         {
+            // 1. Registry (64-bit)
             try
             {
-                using var key64 = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
-                using var subKey64 = key64.OpenSubKey(@"SOFTWARE\Bethesda Softworks\Fallout4");
-                if (subKey64 != null)
+                using var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+                using var subKey = key.OpenSubKey(@"SOFTWARE\Bethesda Softworks\Fallout4");
+                if (subKey != null)
                 {
-                    var path = subKey64.GetValue("Installed Path") as string;
+                    var path = subKey.GetValue("Installed Path") as string;
                     if (!string.IsNullOrEmpty(path) && File.Exists(Path.Combine(path, "Fallout4.exe")))
                         return path;
                 }
             }
             catch { }
 
+            // 2. Registry (32-bit)
             try
             {
                 using var key32 = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32);
@@ -454,6 +810,7 @@ namespace FalloutLauncher
             }
             catch { }
 
+            // 3. Steam libraryfolders.vdf
             try
             {
                 using var steamKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32)
@@ -481,6 +838,7 @@ namespace FalloutLauncher
             }
             catch { }
 
+            // 4. Manual folder selection
             Log("Игра не найдена автоматически. Выберите папку вручную.");
             var dialog = new OpenFolderDialog
             {
@@ -496,7 +854,10 @@ namespace FalloutLauncher
             return null;
         }
 
-        // ========== Расчёт размера папки сохранений ==========
+        // ==================================================================
+        // SAVES SIZE
+        // ==================================================================
+
         private long GetDirectorySize(string path)
         {
             if (!Directory.Exists(path)) return 0;
@@ -531,29 +892,6 @@ namespace FalloutLauncher
                 pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)); // оранжевый
             else
                 pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)); // зелёный
-        }
-
-        private void BtnOpenSaves_Click(object sender, RoutedEventArgs e)
-        {
-            string savesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "profiles", PROFILE_NAME, "saves");
-            if (Directory.Exists(savesPath))
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = savesPath,
-                    UseShellExecute = true
-                });
-            }
-            else
-            {
-                Log("Папка saves не найдена.");
-            }
-        }
-
-        private void BtnMods_Click(object sender, RoutedEventArgs e)
-        {
-            MessageBox.Show("Функция управления модами в разработке.",
-                "В разработке", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 }
