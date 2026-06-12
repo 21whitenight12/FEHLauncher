@@ -1,4 +1,0 @@
-[openai]
-base_url = "http://localhost:1234/v1"
-api_key = "не_нужен_можно_любое_значение"
-model = "Qwen/Qwen2.5-7B-Instruct-GGUF"
