@@ -362,11 +362,17 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 .codewhale/config.toml
+.codewhale/instructions.md
+.codewhale/notes.txt
 codewhale-tui.exe
 codewhale.exe
 codewhale.old-16288
-ico.ico
-ico.webp
-/codewhale
-codewhale/.codewhale/instructions.md
 codewhale/.codewhale/config.toml
+codewhale/.codewhale/instructions.md
+codewhale/1.txt
+codewhale/codewhale-tui.exe
+codewhale/codewhale.exe
+codewhale/codewhale.old-16288
+ico.webp
+codewhale.old-25644
+1.txt

@@ -23,10 +23,20 @@ namespace FalloutLauncher
         private bool isMaximized = false;
         private WindowState savedState = WindowState.Normal;
 
+        private static readonly string SettingsPath =
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FEHLauncher", "settings.json");
+
         public MainWindow()
         {
             InitializeComponent();
             LoadWindowsAccentColor();
+
+            var settings = LoadSettings();
+            isDarkTheme = settings.IsDarkTheme;
+            btnToggleLog.IsChecked = settings.IsLogVisible;
+            ApplyLogState();
             ApplyTheme();
             UpdateSavesSizeDisplay();
 
@@ -38,7 +48,10 @@ namespace FalloutLauncher
             Log("Поиск установленной игры Fallout 4...");
             string? gamePath = FindGamePath();
             if (!string.IsNullOrEmpty(gamePath))
+            {
                 txtGamePath.Text = $"📂 {gamePath}";
+                Log("Игра найдена. Готов к запуску.");
+            }
             else
                 Log("Игра не найдена автоматически. Выберите папку вручную при запуске.");
         }
@@ -153,7 +166,7 @@ namespace FalloutLauncher
             string gamePath = FindGamePath() ?? "не найден";
 
             MessageBox.Show(
-                $"FNH Launcher by WhiteNight v1.1.0\n\n" +
+                $"FEH Launcher by WhiteNight v1.1.0\n\n" +
                 $"Лаунчер для Fallout 4 с поддержкой MO2 и F4SE\n\n" +
                 $"Профиль: {PROFILE_NAME}\n" +
                 $"MO2: {mo2Dir}\n" +
@@ -168,19 +181,19 @@ namespace FalloutLauncher
         // LOG COLLAPSIBLE
         // ==================================================================
 
-        private void LogToggle_Changed(object sender, RoutedEventArgs e)
+        private void ApplyLogState()
         {
-            // Guard against early calls during XAML loading before logContent is wired up
             if (logContent == null) return;
 
             bool isVisible = btnToggleLog.IsChecked == true;
             logContent.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            logContent.Height = isVisible ? 140 : 0;
+        }
 
-            // Adjust log section height
-            if (isVisible)
-                logContent.Height = 140;
-            else
-                logContent.Height = 0;
+        private void LogToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            ApplyLogState();
+            SaveSettings();
         }
 
         // ==================================================================
@@ -191,6 +204,7 @@ namespace FalloutLauncher
         {
             isDarkTheme = !isDarkTheme;
             ApplyTheme();
+            SaveSettings();
         }
 
         private void LoadWindowsAccentColor()
@@ -893,5 +907,46 @@ namespace FalloutLauncher
             else
                 pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)); // зелёный
         }
+
+        // ==================================================================
+        // SETTINGS PERSISTENCE
+        // ==================================================================
+
+        private void SaveSettings()
+        {
+            try
+            {
+                var settings = new AppSettings
+                {
+                    IsDarkTheme = isDarkTheme,
+                    IsLogVisible = btnToggleLog.IsChecked == true
+                };
+                var dir = Path.GetDirectoryName(SettingsPath);
+                if (dir != null && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(SettingsPath, System.Text.Json.JsonSerializer.Serialize(settings));
+            }
+            catch { }
+        }
+
+        private AppSettings LoadSettings()
+        {
+            try
+            {
+                if (File.Exists(SettingsPath))
+                {
+                    var json = File.ReadAllText(SettingsPath);
+                    return System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                }
+            }
+            catch { }
+            return new AppSettings();
+        }
+    }
+
+    public class AppSettings
+    {
+        public bool IsDarkTheme { get; set; } = true;
+        public bool IsLogVisible { get; set; } = true;
     }
 }
