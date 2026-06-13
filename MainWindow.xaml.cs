@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Input;
 using Microsoft.Win32;
 
@@ -140,23 +141,25 @@ namespace FalloutLauncher
             var radio = sender as RadioButton;
             if (radio == null) return;
 
-            // For now, only "Mods" tab opens the ModsWindow as a dialog.
-            // Home / Saves / About stay on the main page.
             if (radio == navMods)
             {
-                BtnMods_Click(sender, e);
-                // Re-check Home after returning from ModsWindow
-                navHome.IsChecked = true;
+                OpenModsPanel();
             }
             else if (radio == navSaves)
             {
+                CloseModsPanel();
                 BtnOpenSaves_Click(sender, e);
                 navHome.IsChecked = true;
             }
             else if (radio == navAbout)
             {
+                CloseModsPanel();
                 ShowAbout();
                 navHome.IsChecked = true;
+            }
+            else if (radio == navHome)
+            {
+                CloseModsPanel();
             }
         }
 
@@ -739,10 +742,20 @@ namespace FalloutLauncher
 
         private void BtnMods_Click(object sender, RoutedEventArgs e)
         {
+            OpenModsPanel();
+        }
+
+        // ==================================================================
+        // MODS SLIDING PANEL
+        // ==================================================================
+
+        private void OpenModsPanel()
+        {
+            if (modsPanelRoot.Visibility == Visibility.Visible)
+                return;
+
             string mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
-            string profilesDir = Path.Combine(mo2Dir, "profiles");
-            string profilePath = Path.Combine(profilesDir, PROFILE_NAME);
-            string modlistPath = Path.Combine(profilePath, "modlist.txt");
+            string modlistPath = Path.Combine(mo2Dir, "profiles", PROFILE_NAME, "modlist.txt");
 
             if (!File.Exists(modlistPath))
             {
@@ -750,17 +763,83 @@ namespace FalloutLauncher
                 MessageBox.Show($"Файл модов не найден для профиля \"{PROFILE_NAME}\".\n" +
                                 $"Запустите MO2 хотя бы один раз, чтобы создать modlist.txt.",
                     "Файл не найден", MessageBoxButton.OK, MessageBoxImage.Warning);
+                navHome.IsChecked = true;
                 return;
             }
 
-            Log("Открытие управления модами...");
-            var modsWindow = new ModsWindow(mo2Dir, PROFILE_NAME, isDarkTheme)
+            Log("Открытие списка опциональных модов...");
+
+            // Load mods into the panel
+            modsControl.CloseRequested -= ModsPanel_CloseRequested;
+            modsControl.CloseRequested += ModsPanel_CloseRequested;
+            modsControl.LoadData(mo2Dir, PROFILE_NAME);
+
+            // Calculate optimal panel width based on longest mod name
+            double panelWidth = modsControl.GetOptimalWidth();
+            modsPanelRoot.Width = panelWidth;
+
+            // Show overlay and panel
+            modsOverlay.Visibility = Visibility.Visible;
+            modsOverlay.Opacity = 0;
+            modsPanelRoot.Visibility = Visibility.Visible;
+            modsPanelSlide.X = panelWidth;
+            modsPanelRoot.UpdateLayout();
+
+            // Animate: overlay fade in + panel slide in
+            var sb = new Storyboard();
+
+            var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(250));
+            Storyboard.SetTarget(fadeIn, modsOverlay);
+            Storyboard.SetTargetProperty(fadeIn, new PropertyPath("Opacity"));
+            sb.Children.Add(fadeIn);
+
+            var slideIn = new DoubleAnimation(panelWidth, 0, TimeSpan.FromMilliseconds(250));
+            slideIn.EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+            Storyboard.SetTarget(slideIn, modsPanelRoot);
+            Storyboard.SetTargetProperty(slideIn, new PropertyPath("(UIElement.RenderTransform).(TranslateTransform.X)"));
+            sb.Children.Add(slideIn);
+
+            sb.Begin();
+        }
+
+        private void CloseModsPanel()
+        {
+            if (modsPanelRoot.Visibility != Visibility.Visible)
+                return;
+
+            var sb = new Storyboard();
+
+            var fadeOut = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
+            Storyboard.SetTarget(fadeOut, modsOverlay);
+            Storyboard.SetTargetProperty(fadeOut, new PropertyPath("Opacity"));
+            sb.Children.Add(fadeOut);
+
+            double panelWidth = modsPanelRoot.Width > 0 ? modsPanelRoot.Width : 480;
+            var slideOut = new DoubleAnimation(0, panelWidth, TimeSpan.FromMilliseconds(200));
+            slideOut.EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn };
+            Storyboard.SetTarget(slideOut, modsPanelRoot);
+            Storyboard.SetTargetProperty(slideOut, new PropertyPath("(UIElement.RenderTransform).(TranslateTransform.X)"));
+            sb.Children.Add(slideOut);
+
+            sb.Completed += (s, args) =>
             {
-                Owner = this,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner
+                modsPanelRoot.Visibility = Visibility.Collapsed;
+                modsOverlay.Visibility = Visibility.Collapsed;
+                navHome.IsChecked = true;
+                Log("Список опциональных модов закрыт.");
             };
-            modsWindow.ShowDialog();
-            Log("Управление модами закрыто.");
+
+            sb.Begin();
+        }
+
+        private void ModsOverlay_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            CloseModsPanel();
+        }
+
+        private void ModsPanel_CloseRequested(object? sender, EventArgs e)
+        {
+            CloseModsPanel();
         }
 
         private void BtnDiscord_Click(object sender, RoutedEventArgs e)

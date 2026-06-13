@@ -1,10 +1,11 @@
 <Window x:Class="FalloutLauncher.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:FalloutLauncher"
         Title="FEH Launcher"
         Icon="ico.ico"
-        Height="680" Width="780"
-        MinHeight="660" MinWidth="680"
+        Height="680" Width="900"
+        MinHeight="660" MinWidth="750"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
@@ -323,50 +324,52 @@
 
                 <!-- ==================== MAIN CONTENT ==================== -->
                 <Grid Grid.Row="1" Margin="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="50"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                    <!-- Sidebar + content layer -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="50"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
 
-                    <!-- ─── Sidebar ─── -->
-                    <Border Grid.Column="0"
-                            Background="{DynamicResource SurfaceBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="0,0,1,0">
-                        <StackPanel VerticalAlignment="Top" Margin="0,8,0,0">
-                            <RadioButton x:Name="navHome" GroupName="SidebarNav"
-                                         Style="{StaticResource SidebarItemStyle}"
-                                         IsChecked="True"
-                                         ToolTip="Главная"
-                                         Checked="Nav_Checked">
-                                <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M3,9 L9,2 L21,9 V20 A2,2 0 0,1 19,22 H5 A2,2 0 0,1 3,20 Z M9,22 L9,12 L15,12 L15,22"/>
-                            </RadioButton>
-                            <RadioButton x:Name="navMods" GroupName="SidebarNav"
-                                         Style="{StaticResource SidebarItemStyle}"
-                                         ToolTip="Моды"
-                                         Checked="Nav_Checked">
-                                <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M21,16 V8 A2,2 0 0,0 20,6.27 L13,2.27 A2,2 0 0,0 11,2.27 L4,6.27 A2,2 0 0,0 3,8 V16 A2,2 0 0,0 4,17.73 L11,21.73 A2,2 0 0,0 13,21.73 L20,17.73 A2,2 0 0,0 21,16 Z M3.27,6.96 L12,12.01 L20.73,6.96 M12,22.08 L12,12"/>
-                            </RadioButton>
-                            <RadioButton x:Name="navSaves" GroupName="SidebarNav"
-                                         Style="{StaticResource SidebarItemStyle}"
-                                         ToolTip="Сохранения"
-                                         Checked="Nav_Checked">
-                                <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M19,21 H5 A2,2 0 0,1 3,19 V5 A2,2 0 0,1 5,3 H16 L21,8 V19 A2,2 0 0,1 19,21 Z M17,21 V13 H7 V21 M7,3 V8 H15"/>
-                            </RadioButton>
-                            <RadioButton x:Name="navAbout" GroupName="SidebarNav"
-                                         Style="{StaticResource SidebarItemStyle}"
-                                         ToolTip="О программе"
-                                         Checked="Nav_Checked">
-                                <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M12,2 A10,10 0 1,1 2,12 A10,10 0 0,1 12,2 Z M12,8 V12 M12,16 L12.01,16"/>
-                            </RadioButton>
-                        </StackPanel>
-                    </Border>
+                        <!-- ─── Sidebar ─── -->
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="0,0,1,0">
+                            <StackPanel VerticalAlignment="Top" Margin="0,8,0,0">
+                                <RadioButton x:Name="navHome" GroupName="SidebarNav"
+                                             Style="{StaticResource SidebarItemStyle}"
+                                             IsChecked="True"
+                                             ToolTip="Главная"
+                                             Checked="Nav_Checked">
+                                    <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M3,9 L9,2 L21,9 V20 A2,2 0 0,1 19,22 H5 A2,2 0 0,1 3,20 Z M9,22 L9,12 L15,12 L15,22"/>
+                                </RadioButton>
+                                <RadioButton x:Name="navMods" GroupName="SidebarNav"
+                                             Style="{StaticResource SidebarItemStyle}"
+                                             ToolTip="Опциональные моды"
+                                             Checked="Nav_Checked">
+                                    <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M21,16 V8 A2,2 0 0,0 20,6.27 L13,2.27 A2,2 0 0,0 11,2.27 L4,6.27 A2,2 0 0,0 3,8 V16 A2,2 0 0,0 4,17.73 L11,21.73 A2,2 0 0,0 13,21.73 L20,17.73 A2,2 0 0,0 21,16 Z M3.27,6.96 L12,12.01 L20.73,6.96 M12,22.08 L12,12"/>
+                                </RadioButton>
+                                <RadioButton x:Name="navSaves" GroupName="SidebarNav"
+                                             Style="{StaticResource SidebarItemStyle}"
+                                             ToolTip="Сохранения"
+                                             Checked="Nav_Checked">
+                                    <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M19,21 H5 A2,2 0 0,1 3,19 V5 A2,2 0 0,1 5,3 H16 L21,8 V19 A2,2 0 0,1 19,21 Z M17,21 V13 H7 V21 M7,3 V8 H15"/>
+                                </RadioButton>
+                                <RadioButton x:Name="navAbout" GroupName="SidebarNav"
+                                             Style="{StaticResource SidebarItemStyle}"
+                                             ToolTip="О программе"
+                                             Checked="Nav_Checked">
+                                    <Path Width="20" Height="20" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M12,2 A10,10 0 1,1 2,12 A10,10 0 0,1 12,2 Z M12,8 V12 M12,16 L12.01,16"/>
+                                </RadioButton>
+                            </StackPanel>
+                        </Border>
 
-                    <!-- ─── Content Area ─── -->
-                    <ScrollViewer Grid.Column="1"
-                                  Style="{StaticResource ModernScrollViewer}"
-                                  Background="{DynamicResource BgBrush}"
-                                  Padding="20">
+                        <!-- ─── Content Area ─── -->
+                        <ScrollViewer Grid.Column="1"
+                                      Style="{StaticResource ModernScrollViewer}"
+                                      Background="{DynamicResource BgBrush}"
+                                      Padding="20">
                         <StackPanel x:Name="contentPanel">
 
                             <!-- ======== SECTION: Welcome ======== -->
@@ -441,10 +444,10 @@
                                         Click="BtnMods_Click">
                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                         <Path Width="28" Height="28" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M21,16 V8 A2,2 0 0,0 20,6.27 L13,2.27 A2,2 0 0,0 11,2.27 L4,6.27 A2,2 0 0,0 3,8 V16 A2,2 0 0,0 4,17.73 L11,21.73 A2,2 0 0,0 13,21.73 L20,17.73 A2,2 0 0,0 21,16 Z M3.27,6.96 L12,12.01 L20.73,6.96 M12,22.08 L12,12"/>
-                                        <TextBlock Text="Управление модами"
+                                        <TextBlock Text="Опциональные моды"
                                                    FontSize="13" FontWeight="SemiBold"
                                                    HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                                        <TextBlock Text="Вкл/выкл моды"
+                                        <TextBlock Text="Вкл/выкл опциональные"
                                                    FontSize="10"
                                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                                    HorizontalAlignment="Center" Margin="0,2,0,0"/>
@@ -607,6 +610,30 @@
 
                         </StackPanel>
                     </ScrollViewer>
+                </Grid>
+
+                    <!-- ─── Overlay backdrop (panel open) ─── -->
+                    <Border x:Name="modsOverlay"
+                            Background="#80000000"
+                            Visibility="Collapsed"
+                            IsHitTestVisible="True"
+                            MouseDown="ModsOverlay_MouseDown"/>
+
+                    <!-- ─── Sliding Mods Panel ─── -->
+                    <Border x:Name="modsPanelRoot"
+                            Width="480"
+                            HorizontalAlignment="Right"
+                            Visibility="Collapsed">
+                        <Border.RenderTransform>
+                            <TranslateTransform x:Name="modsPanelSlide" X="480"/>
+                        </Border.RenderTransform>
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1,0,0,0"
+                                CornerRadius="8,0,0,8">
+                            <local:ModsPanel x:Name="modsControl"/>
+                        </Border>
+                    </Border>
                 </Grid>
 
                 <!-- ==================== STATUS BAR ==================== -->

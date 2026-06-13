@@ -1,0 +1,2589 @@
+# MO2 API Bridge Plugin - Complete Documentation
+
+## Table of Contents
+
+1. [Introduction](#1-introduction)
+2. [Architecture Overview](#2-architecture-overview)
+3. [Installation](#3-installation)
+4. [Communication Protocol](#4-communication-protocol)
+5. [API Reference](#5-api-reference)
+6. [Events System](#6-events-system)
+7. [External Plugins Development](#7-external-plugins-development)
+8. [Client Library](#8-client-library)
+9. [Advanced Topics](#9-advanced-topics)
+10. [Troubleshooting](#10-troubleshooting)
+11. [FAQ](#11-faq)
+12. [Changelog](#12-changelog)
+
+---
+
+# 1. Introduction
+
+## 1.1 What is MO2 AI Bridge?
+
+**MO2 API Bridge** is a plugin for Mod Organizer 2 that provides a TCP/IP-based API bridge, enabling external Python applications to interact with MO2's internal functionality. This allows developers to create external tools, automation scripts, AI assistants, and other applications that can read and modify MO2's state.
+
+## 1.2 Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **TCP/IP Communication** | Local network-based IPC using JSON messages |
+| **Thread-Safe Execution** | All MO2 API calls execute safely in the main Qt thread |
+| **Real-Time Events** | Subscribe to MO2 events (mod changes, profile switches, etc.) |
+| **External Plugins** | Auto-launch Python scripts that connect to the bridge |
+| **Resource-Optimized** | Uses single Condition variable to prevent handle leaks |
+| **Control Panel GUI** | Built-in interface for monitoring and management |
+
+## 1.3 Use Cases
+
+- **AI-Powered Mod Assistants**: Create intelligent tools that help users manage mods
+- **Automation Scripts**: Batch operations on mod lists, profiles, load orders
+- **External GUIs**: Build custom interfaces for specific modding workflows
+- **Integration Tools**: Connect MO2 with other applications or services
+- **Monitoring Dashboards**: Track mod installation activities in real-time
+
+## 1.4 Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| Mod Organizer 2 | 2.4.0 or higher |
+| Python (MO2 embedded) | 3.11+ |
+| PyQt6 | Included with MO2 |
+| Operating System | Windows 10/11 (primary), Linux (experimental) |
+
+---
+
+# 2. Architecture Overview
+
+## 2.1 System Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           MOD ORGANIZER 2                                    │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                        MO2 AI Bridge Plugin                             │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │ │
+│  │  │ APIExecutor  │  │  IPCServer   │  │EventHandler  │  │  External   │ │ │
+│  │  │              │  │              │  │              │  │  Plugin     │ │ │
+│  │  │ - execute()  │  │ - TCP:52525  │  │ - MO2 signals│  │  Manager    │ │ │
+│  │  │ - serialize  │  │ - clients[]  │  │ - broadcast  │  │             │ │ │
+│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬──────┘ │ │
+│  │         │                 │                 │                 │        │ │
+│  │         └─────────────────┼─────────────────┼─────────────────┘        │ │
+│  │                           │                 │                          │ │
+│  └───────────────────────────┼─────────────────┼──────────────────────────┘ │
+│                              │                 │                            │
+│  ┌───────────────────────────┴─────────────────┴──────────────────────────┐ │
+│  │                         MO2 Core Interfaces                             │ │
+│  │   IOrganizer │ IModList │ IPluginList │ IProfile │ IDownloadManager    │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                          TCP/IP (localhost:52525)
+                                      │
+        ┌─────────────────────────────┼─────────────────────────────┐
+        │                             │                             │
+        ▼                             ▼                             ▼
+┌───────────────┐           ┌───────────────┐           ┌───────────────┐
+│ External      │           │ External      │           │ External      │
+│ Plugin 1      │           │ Plugin 2      │           │ Custom App    │
+│ (auto-start)  │           │ (auto-start)  │           │ (manual)      │
+└───────────────┘           └───────────────┘           └───────────────┘
+```
+
+## 2.2 Core Components
+
+### 2.2.1 APIExecutor
+
+The `APIExecutor` is responsible for thread-safe execution of MO2 API calls.
+
+**Key Responsibilities:**
+- Receives API call requests from worker threads
+- Marshals execution to Qt main thread via signals
+- Serializes results to JSON-compatible format
+- Manages request lifecycle with proper cleanup
+
+**Thread Safety Mechanism:**
+```
+Worker Thread                    Main Qt Thread
+      │                                │
+      │  emit(_execute_signal)         │
+      │ ──────────────────────────────►│
+      │                                │ _do_execute_in_main_thread()
+      │                                │ - invoke MO2 API
+      │                                │ - store result
+      │                                │
+      │  condition.notify_all()        │
+      │ ◄──────────────────────────────│
+      │                                │
+      │  retrieve result               │
+      ▼                                ▼
+```
+
+### 2.2.2 IPCServer
+
+TCP server handling external client connections.
+
+**Features:**
+- Listens on `127.0.0.1:52525` (configurable port range)
+- Manages multiple concurrent clients
+- Handles message framing with delimiters
+- Broadcasts events to subscribed clients
+- Heartbeat mechanism for connection health
+
+### 2.2.3 MO2EventHandler
+
+Connects to MO2's native signals and converts them to bridge events.
+
+**Monitored Signals:**
+- ModList: onModInstalled, onModRemoved, onModStateChanged, onModMoved
+- PluginList: onPluginStateChanged, onPluginMoved
+- Profile: onProfileCreated, onProfileRemoved, onProfileRenamed, onProfileChanged
+- Application: onAboutToRun, onFinishedRun
+
+### 2.2.4 ExternalPluginManager
+
+Manages auto-started external Python scripts.
+
+**Features:**
+- Scans `external_plugins/` folder for `.py` files
+- Launches scripts with environment variables
+- Monitors process health
+- Captures stdout/stderr output
+- Provides start/stop/restart capabilities
+
+---
+
+# 3. Installation
+
+## 3.1 Plugin Installation
+
+### Step 1: Locate MO2 Plugins Folder
+
+```
+<MO2 Installation>/plugins/
+```
+
+Common locations:
+- `C:\Modding\MO2\plugins\`
+- `C:\Program Files\Mod Organizer 2\plugins\`
+
+### Step 2: Create Plugin Folder
+
+```
+<MO2>/plugins/mo2_ai_bridge/
+```
+
+### Step 3: Copy Plugin File
+
+Place `mo2_ai_bridge.py` in the folder:
+```
+<MO2>/plugins/mo2_ai_bridge/mo2_ai_bridge.py
+```
+
+### Step 4: Create External Plugins Folder
+
+```
+<MO2>/plugins/mo2_ai_bridge/external_plugins/
+```
+
+### Step 5: Verify Installation
+
+1. Start Mod Organizer 2
+2. Go to **Tools** menu
+3. Look for **"AI Bridge Control Panel"**
+4. Click to open the control panel
+5. Verify status shows "✅ Running"
+
+## 3.2 Directory Structure
+
+```
+<MO2>/plugins/mo2_ai_bridge/
+├── mo2_ai_bridge.py          # Main plugin file
+├── external_plugins/          # Auto-started scripts folder
+│   ├── my_plugin.py          # Example external plugin
+│   ├── another_tool.py       # Another external plugin
+│   └── _disabled_plugin.py   # Ignored (starts with _)
+└── README.md                  # Optional documentation
+```
+
+## 3.3 Configuration
+
+The plugin uses sensible defaults and requires no configuration file. However, behavior can be modified by editing constants in the source code:
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `DEFAULT_PORT` | 52525 | Starting port for TCP server |
+| `PORT_RANGE` | 10 | Number of ports to try if default is busy |
+| `MAX_CLIENTS` | 50 | Maximum concurrent client connections |
+| `SOCKET_TIMEOUT` | 5.0 | Socket read timeout in seconds |
+| `HEARTBEAT_INTERVAL` | 30.0 | Seconds between heartbeat messages |
+| `BUFFER_SIZE` | 65536 | TCP receive buffer size |
+| `MAX_BUFFER_SIZE` | 1048576 | Maximum message buffer (1MB) |
+
+---
+
+# 4. Communication Protocol
+
+## 4.1 Transport Layer
+
+| Property | Value |
+|----------|-------|
+| Protocol | TCP |
+| Address | 127.0.0.1 (localhost only) |
+| Port | 52525 (default) |
+| Encoding | UTF-8 |
+| Format | JSON |
+| Delimiter | `\n\x00\x00\n` (4 bytes) |
+
+## 4.2 Message Structure
+
+All messages follow the `BridgeMessage` structure:
+
+```json
+{
+    "type": "request|response|event|handshake|heartbeat|error",
+    "id": "uuid-string",
+    "client_id": "uuid-string|null",
+    "method": "interface.methodName|null",
+    "args": [],
+    "kwargs": {},
+    "result": "any|null",
+    "error": "string|null",
+    "error_traceback": "string|null",
+    "event_type": "string|null",
+    "event_data": {},
+    "timestamp": 1234567890.123
+}
+```
+
+## 4.3 Message Types
+
+### 4.3.1 Handshake (Server → Client)
+
+Sent immediately upon client connection:
+
+```json
+{
+    "type": "handshake",
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "client_id": "client-uuid-here",
+    "result": {
+        "client_id": "client-uuid-here",
+        "server_version": "1.3.0",
+        "available_methods": [
+            "organizer.modList",
+            "organizer.pluginList",
+            "modList.allMods",
+            "..."
+        ],
+        "available_events": [
+            "mod_list_changed",
+            "profile_changed",
+            "..."
+        ]
+    },
+    "timestamp": 1234567890.123
+}
+```
+
+### 4.3.2 Client Handshake (Client → Server)
+
+Optional response to identify client and subscribe to events:
+
+```json
+{
+    "type": "handshake",
+    "id": "unique-id",
+    "kwargs": {
+        "name": "My External Tool",
+        "subscribe_events": ["mod_list_changed", "profile_changed"]
+    }
+}
+```
+
+**Event Subscription Options:**
+- `["*"]` - Subscribe to all events
+- `["mod_list_changed", "profile_changed"]` - Specific events only
+- `[]` or omit - Receive all events (default)
+
+### 4.3.3 Request (Client → Server)
+
+API method call request:
+
+```json
+{
+    "type": "request",
+    "id": "request-uuid",
+    "method": "modList.allMods",
+    "args": [],
+    "kwargs": {}
+}
+```
+
+**With Arguments:**
+```json
+{
+    "type": "request",
+    "id": "request-uuid",
+    "method": "modList.setActive",
+    "args": ["My Mod Name", true],
+    "kwargs": {}
+}
+```
+
+### 4.3.4 Response (Server → Client)
+
+Successful response:
+```json
+{
+    "type": "response",
+    "id": "request-uuid",
+    "result": ["Mod1", "Mod2", "Mod3"],
+    "error": null,
+    "timestamp": 1234567890.123
+}
+```
+
+Error response:
+```json
+{
+    "type": "response",
+    "id": "request-uuid",
+    "result": null,
+    "error": "Method 'unknownMethod' not found on modList",
+    "error_traceback": "Traceback (most recent call last):\n...",
+    "timestamp": 1234567890.123
+}
+```
+
+### 4.3.5 Event (Server → Client)
+
+```json
+{
+    "type": "event",
+    "id": "event-uuid",
+    "event_type": "mod_list_changed",
+    "event_data": {
+        "action": "installed",
+        "mod": "New Mod Name"
+    },
+    "timestamp": 1234567890.123
+}
+```
+
+### 4.3.6 Heartbeat (Bidirectional)
+
+```json
+{
+    "type": "heartbeat",
+    "id": "heartbeat-uuid",
+    "timestamp": 1234567890.123
+}
+```
+
+## 4.4 Message Framing
+
+Messages are delimited by a 4-byte sequence: `\n\x00\x00\n`
+
+```
+<JSON Message 1>\n\x00\x00\n<JSON Message 2>\n\x00\x00\n...
+```
+
+**Implementation Note:** Always append the delimiter after each message and split incoming data on the delimiter.
+
+## 4.5 Connection Lifecycle
+
+```
+Client                                    Server
+   │                                         │
+   │─────── TCP Connect ────────────────────►│
+   │                                         │
+   │◄──────── Handshake ─────────────────────│
+   │                                         │
+   │─────── Client Handshake (optional) ────►│
+   │                                         │
+   │─────── Request ────────────────────────►│
+   │◄──────── Response ──────────────────────│
+   │                                         │
+   │◄──────── Event ─────────────────────────│
+   │◄──────── Event ─────────────────────────│
+   │                                         │
+   │◄──────── Heartbeat ─────────────────────│
+   │─────── Heartbeat ──────────────────────►│
+   │                                         │
+   │─────── TCP Disconnect ─────────────────►│
+   │                                         │
+```
+
+---
+
+# 5. API Reference
+
+## 5.1 Available Interfaces
+
+| Interface | Description | Access |
+|-----------|-------------|--------|
+| `organizer` | Main MO2 organizer interface | Direct |
+| `modList` | Mod list management | Via `organizer.modList()` |
+| `pluginList` | Plugin/ESP management | Via `organizer.pluginList()` |
+| `profile` | Current profile info | Via `organizer.profile()` |
+| `downloadManager` | Download management | Via `organizer.downloadManager()` |
+
+## 5.2 Organizer Methods
+
+### 5.2.1 organizer.modList
+
+**Description:** Returns the mod list interface.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.modList", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": {"__type__": "IModList", "name": "ModList"}}
+```
+
+---
+
+### 5.2.2 organizer.pluginList
+
+**Description:** Returns the plugin list interface.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.pluginList", "args": [], "kwargs": {}}
+```
+
+---
+
+### 5.2.3 organizer.profile
+
+**Description:** Returns the current profile interface.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.profile", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": {"__type__": "IProfile", "name": "Default"}}
+```
+
+---
+
+### 5.2.4 organizer.profileName
+
+**Description:** Returns the name of the current profile.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.profileName", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "Default"}
+```
+
+---
+
+### 5.2.5 organizer.profilePath
+
+**Description:** Returns the absolute path to the current profile folder.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.profilePath", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "C:/Users/User/AppData/Local/ModOrganizer/Skyrim/profiles/Default"}
+```
+
+---
+
+### 5.2.6 organizer.modsPath
+
+**Description:** Returns the path to the mods folder.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.modsPath", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "C:/Modding/MO2/mods"}
+```
+
+---
+
+### 5.2.7 organizer.downloadsPath
+
+**Description:** Returns the path to the downloads folder.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.downloadsPath", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "C:/Modding/MO2/downloads"}
+```
+
+---
+
+### 5.2.8 organizer.overwritePath
+
+**Description:** Returns the path to the overwrite folder.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.overwritePath", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "C:/Modding/MO2/overwrite"}
+```
+
+---
+
+### 5.2.9 organizer.basePath
+
+**Description:** Returns the MO2 base installation path.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.basePath", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "C:/Modding/MO2"}
+```
+
+---
+
+### 5.2.10 organizer.managedGame
+
+**Description:** Returns information about the currently managed game.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.managedGame", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": {"__type__": "IPluginGame", "name": "Skyrim Special Edition"}}
+```
+
+---
+
+### 5.2.11 organizer.refreshModList
+
+**Description:** Triggers a refresh of the mod list.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.refreshModList", "args": [false], "kwargs": {}}
+```
+
+**Arguments:**
+| Argument | Type | Description |
+|----------|------|-------------|
+| `force` | bool | If true, forces full refresh |
+
+**Response:**
+```json
+{"result": null}
+```
+
+---
+
+### 5.2.12 organizer.resolvePath
+
+**Description:** Resolves a virtual path to actual file location.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.resolvePath", "args": ["textures/actor/character/female/femalehead.dds"], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "C:/Modding/MO2/mods/CBBE/textures/actor/character/female/femalehead.dds"}
+```
+
+---
+
+### 5.2.13 organizer.findFiles
+
+**Description:** Finds files matching a pattern in the virtual filesystem.
+
+**Request:**
+```json
+{"type": "request", "method": "organizer.findFiles", "args": ["meshes", "*.nif"], "kwargs": {}}
+```
+
+**Arguments:**
+| Argument | Type | Description |
+|----------|------|-------------|
+| `path` | str | Directory path to search |
+| `pattern` | str | Glob pattern for matching |
+
+**Response:**
+```json
+{"result": ["meshes/actors/character/body.nif", "meshes/weapons/sword.nif"]}
+```
+
+---
+
+## 5.3 ModList Methods
+
+### 5.3.1 modList.allMods
+
+**Description:** Returns a list of all mod names.
+
+**Request:**
+```json
+{"type": "request", "method": "modList.allMods", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": ["SKSE64", "SkyUI", "USSEP", "CBBE", "RaceMenu"]}
+```
+
+---
+
+### 5.3.2 modList.state
+
+**Description:** Returns the state of a specific mod.
+
+**Request:**
+```json
+{"type": "request", "method": "modList.state", "args": ["SkyUI"], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": 2}
+```
+
+**State Values:**
+| Value | Constant | Meaning |
+|-------|----------|---------|
+| 0 | STATE_MISSING | Mod is missing |
+| 1 | STATE_INACTIVE | Mod exists but is disabled |
+| 2 | STATE_ACTIVE | Mod is enabled |
+
+---
+
+### 5.3.3 modList.setActive
+
+**Description:** Enables or disables a mod.
+
+**Request:**
+```json
+{"type": "request", "method": "modList.setActive", "args": ["SkyUI", true], "kwargs": {}}
+```
+
+**Arguments:**
+| Argument | Type | Description |
+|----------|------|-------------|
+| `name` | str | Mod name |
+| `active` | bool | True to enable, False to disable |
+
+**Response:**
+```json
+{"result": true}
+```
+
+---
+
+### 5.3.4 modList.priority
+
+**Description:** Returns the priority (load order position) of a mod.
+
+**Request:**
+```json
+{"type": "request", "method": "modList.priority", "args": ["SkyUI"], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": 15}
+```
+
+---
+
+### 5.3.5 modList.setPriority
+
+**Description:** Sets the priority of a mod.
+
+**Request:**
+```json
+{"type": "request", "method": "modList.setPriority", "args": ["SkyUI", 10], "kwargs": {}}
+```
+
+**Arguments:**
+| Argument | Type | Description |
+|----------|------|-------------|
+| `name` | str | Mod name |
+| `priority` | int | New priority value |
+
+**Response:**
+```json
+{"result": true}
+```
+
+---
+
+### 5.3.6 modList.displayName
+
+**Description:** Returns the display name of a mod.
+
+**Request:**
+```json
+{"type": "request", "method": "modList.displayName", "args": ["SkyUI"], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "SkyUI 5.2SE"}
+```
+
+---
+
+## 5.4 PluginList Methods
+
+### 5.4.1 pluginList.pluginNames
+
+**Description:** Returns a list of all plugin (ESP/ESM/ESL) names.
+
+**Request:**
+```json
+{"type": "request", "method": "pluginList.pluginNames", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": ["Skyrim.esm", "Update.esm", "Dawnguard.esm", "SkyUI_SE.esp"]}
+```
+
+---
+
+### 5.4.2 pluginList.state
+
+**Description:** Returns the state of a plugin.
+
+**Request:**
+```json
+{"type": "request", "method": "pluginList.state", "args": ["SkyUI_SE.esp"], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": 2}
+```
+
+**State Values:**
+| Value | Constant | Meaning |
+|-------|----------|---------|
+| 0 | STATE_MISSING | Plugin file not found |
+| 1 | STATE_INACTIVE | Plugin is disabled |
+| 2 | STATE_ACTIVE | Plugin is enabled |
+
+---
+
+### 5.4.3 pluginList.setState
+
+**Description:** Enables or disables a plugin.
+
+**Request:**
+```json
+{"type": "request", "method": "pluginList.setState", "args": ["SkyUI_SE.esp", 2], "kwargs": {}}
+```
+
+**Arguments:**
+| Argument | Type | Description |
+|----------|------|-------------|
+| `name` | str | Plugin filename |
+| `state` | int | Target state (1=inactive, 2=active) |
+
+---
+
+### 5.4.4 pluginList.priority
+
+**Description:** Returns the priority of a plugin.
+
+**Request:**
+```json
+{"type": "request", "method": "pluginList.priority", "args": ["SkyUI_SE.esp"], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": 25}
+```
+
+---
+
+### 5.4.5 pluginList.loadOrder
+
+**Description:** Returns the load order index of a plugin.
+
+**Request:**
+```json
+{"type": "request", "method": "pluginList.loadOrder", "args": ["SkyUI_SE.esp"], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": 12}
+```
+
+---
+
+## 5.5 Profile Methods
+
+### 5.5.1 profile.name
+
+**Description:** Returns the current profile name.
+
+**Request:**
+```json
+{"type": "request", "method": "profile.name", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "Default"}
+```
+
+---
+
+### 5.5.2 profile.absolutePath
+
+**Description:** Returns the absolute path to the profile folder.
+
+**Request:**
+```json
+{"type": "request", "method": "profile.absolutePath", "args": [], "kwargs": {}}
+```
+
+**Response:**
+```json
+{"result": "C:/Users/User/AppData/Local/ModOrganizer/Skyrim/profiles/Default"}
+```
+
+---
+
+## 5.6 Result Serialization
+
+All results are serialized to JSON-compatible formats:
+
+| Python Type | JSON Type | Example |
+|-------------|-----------|---------|
+| `None` | `null` | `null` |
+| `str` | `string` | `"text"` |
+| `int` | `number` | `42` |
+| `float` | `number` | `3.14` |
+| `bool` | `boolean` | `true` |
+| `list` / `tuple` | `array` | `[1, 2, 3]` |
+| `dict` | `object` | `{"key": "value"}` |
+| `Path` | `string` | `"C:/path/to/file"` |
+| MO2 Object | `object` | `{"__type__": "IProfile", "name": "Default"}` |
+| Other | `string` | `"<ClassName>"` |
+
+---
+
+# 6. Events System
+
+## 6.1 Event Types
+
+### 6.1.1 mod_list_changed
+
+Triggered when the mod list is modified.
+
+**Actions:**
+| Action | Description | Additional Data |
+|--------|-------------|-----------------|
+| `installed` | New mod installed | `mod`: mod name |
+| `removed` | Mod removed | `mod`: mod name |
+| `state_changed` | Mod(s) enabled/disabled | `states`: {name: state} |
+| `moved` | Mod priority changed | `mod`, `old`, `new` |
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "mod_list_changed",
+    "event_data": {
+        "action": "installed",
+        "mod": "New Awesome Mod"
+    }
+}
+```
+
+---
+
+### 6.1.2 plugin_state_changed
+
+Triggered when plugin states change.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "plugin_state_changed",
+    "event_data": {
+        "action": "state_changed",
+        "states": {
+            "SkyUI_SE.esp": 2,
+            "OldMod.esp": 1
+        }
+    }
+}
+```
+
+---
+
+### 6.1.3 profile_changed
+
+Triggered when the active profile is switched.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "profile_changed",
+    "event_data": {
+        "old": "Default",
+        "new": "Testing Profile"
+    }
+}
+```
+
+---
+
+### 6.1.4 profile_created
+
+Triggered when a new profile is created.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "profile_created",
+    "event_data": {
+        "profile": "New Profile Name"
+    }
+}
+```
+
+---
+
+### 6.1.5 profile_removed
+
+Triggered when a profile is deleted.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "profile_removed",
+    "event_data": {
+        "profile": "Deleted Profile"
+    }
+}
+```
+
+---
+
+### 6.1.6 profile_renamed
+
+Triggered when a profile is renamed.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "profile_renamed",
+    "event_data": {
+        "old_name": "Old Name",
+        "new_name": "New Name"
+    }
+}
+```
+
+---
+
+### 6.1.7 about_to_run
+
+Triggered before an executable is launched through MO2.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "about_to_run",
+    "event_data": {
+        "executable": "C:/Games/Skyrim/skse64_loader.exe"
+    }
+}
+```
+
+---
+
+### 6.1.8 finished_run
+
+Triggered after an executable finishes.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "finished_run",
+    "event_data": {
+        "executable": "C:/Games/Skyrim/skse64_loader.exe",
+        "exit_code": 0
+    }
+}
+```
+
+---
+
+### 6.1.9 bridge_started
+
+Triggered when the bridge server starts.
+
+**Example:**
+```json
+{
+    "type": "event",
+    "event_type": "bridge_started",
+    "event_data": {
+        "port": 52525
+    }
+}
+```
+
+---
+
+## 6.2 Subscribing to Events
+
+To filter which events you receive, send a client handshake:
+
+```json
+{
+    "type": "handshake",
+    "kwargs": {
+        "name": "My Tool",
+        "subscribe_events": ["mod_list_changed", "profile_changed"]
+    }
+}
+```
+
+**Subscription Options:**
+
+| Value | Effect |
+|-------|--------|
+| `["*"]` | Receive all events |
+| `["event1", "event2"]` | Receive only specified events |
+| `[]` or omit | Receive all events (default) |
+
+---
+
+# 7. External Plugins Development
+
+## 7.1 Overview
+
+External plugins are Python scripts that automatically connect to the bridge when MO2 starts. They are placed in the `external_plugins/` folder.
+
+## 7.2 Environment Variables
+
+When launched, external plugins receive these environment variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `MO2_BRIDGE_HOST` | Server hostname | `127.0.0.1` |
+| `MO2_BRIDGE_PORT` | Server port | `52525` |
+| `MO2_PLUGIN_NAME` | Script name (without .py) | `my_plugin` |
+
+## 7.3 Basic External Plugin Template
+
+```python
+#!/usr/bin/env python3
+"""
+MO2 External Plugin Template
+Place this file in: <MO2>/plugins/mo2_ai_bridge/external_plugins/
+"""
+
+import os
+import sys
+import socket
+import json
+import time
+import threading
+import uuid
+from typing import Any, Dict, Optional, Callable
+
+
+class MO2BridgeClient:
+    """Client for communicating with MO2 AI Bridge."""
+    
+    DELIMITER = b'\n\x00\x00\n'
+    
+    def __init__(self, host: str = None, port: int = None, name: str = None):
+        self.host = host or os.environ.get('MO2_BRIDGE_HOST', '127.0.0.1')
+        self.port = int(port or os.environ.get('MO2_BRIDGE_PORT', '52525'))
+        self.name = name or os.environ.get('MO2_PLUGIN_NAME', 'ExternalPlugin')
+        
+        self.socket: Optional[socket.socket] = None
+        self.client_id: Optional[str] = None
+        self.connected = False
+        self._pending: Dict[str, threading.Event] = {}
+        self._results: Dict[str, Any] = {}
+        self._lock = threading.Lock()
+        self._recv_thread: Optional[threading.Thread] = None
+        self._running = False
+        
+        # Event handlers
+        self._event_handlers: Dict[str, list] = {}
+    
+    def connect(self, subscribe_events: list = None, timeout: float = 10.0) -> bool:
+        """Connect to MO2 Bridge server."""
+        try:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(timeout)
+            self.socket.connect((self.host, self.port))
+            
+            # Wait for server handshake
+            handshake = self._recv_message()
+            if handshake and handshake.get('type') == 'handshake':
+                self.client_id = handshake.get('client_id')
+                self.connected = True
+                
+                # Send client handshake
+                self._send_message({
+                    'type': 'handshake',
+                    'id': str(uuid.uuid4()),
+                    'kwargs': {
+                        'name': self.name,
+                        'subscribe_events': subscribe_events or ['*']
+                    }
+                })
+                
+                # Start receive thread
+                self._running = True
+                self._recv_thread = threading.Thread(target=self._receive_loop, daemon=True)
+                self._recv_thread.start()
+                
+                print(f"[{self.name}] Connected to MO2 Bridge on port {self.port}")
+                return True
+                
+        except Exception as e:
+            print(f"[{self.name}] Connection failed: {e}")
+            return False
+        
+        return False
+    
+    def disconnect(self):
+        """Disconnect from server."""
+        self._running = False
+        self.connected = False
+        if self.socket:
+            try:
+                self.socket.close()
+            except:
+                pass
+    
+    def call(self, method: str, *args, **kwargs) -> Any:
+        """Call an MO2 API method and wait for result."""
+        if not self.connected:
+            raise ConnectionError("Not connected to bridge")
+        
+        request_id = str(uuid.uuid4())
+        event = threading.Event()
+        
+        with self._lock:
+            self._pending[request_id] = event
+        
+        try:
+            self._send_message({
+                'type': 'request',
+                'id': request_id,
+                'method': method,
+                'args': list(args),
+                'kwargs': kwargs
+            })
+            
+            if not event.wait(timeout=30.0):
+                raise TimeoutError(f"Call to {method} timed out")
+            
+            with self._lock:
+                result = self._results.pop(request_id, None)
+            
+            if result and result.get('error'):
+                raise Exception(result['error'])
+            
+            return result.get('result') if result else None
+            
+        finally:
+            with self._lock:
+                self._pending.pop(request_id, None)
+    
+    def on_event(self, event_type: str, handler: Callable):
+        """Register an event handler."""
+        if event_type not in self._event_handlers:
+            self._event_handlers[event_type] = []
+        self._event_handlers[event_type].append(handler)
+    
+    def _send_message(self, msg: dict):
+        """Send a message to the server."""
+        data = json.dumps(msg).encode('utf-8') + self.DELIMITER
+        self.socket.sendall(data)
+    
+    def _recv_message(self) -> Optional[dict]:
+        """Receive a single message."""
+        buffer = b""
+        while self.DELIMITER not in buffer:
+            chunk = self.socket.recv(65536)
+            if not chunk:
+                return None
+            buffer += chunk
+        
+        msg_data, _ = buffer.split(self.DELIMITER, 1)
+        return json.loads(msg_data.decode('utf-8'))
+    
+    def _receive_loop(self):
+        """Background thread for receiving messages."""
+        buffer = b""
+        self.socket.settimeout(5.0)
+        
+        while self._running:
+            try:
+                data = self.socket.recv(65536)
+                if not data:
+                    break
+                
+                buffer += data
+                
+                while self.DELIMITER in buffer:
+                    msg_data, buffer = buffer.split(self.DELIMITER, 1)
+                    try:
+                        msg = json.loads(msg_data.decode('utf-8'))
+                        self._handle_message(msg)
+                    except json.JSONDecodeError:
+                        pass
+                        
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self._running:
+                    print(f"[{self.name}] Receive error: {e}")
+                break
+        
+        self.connected = False
+    
+    def _handle_message(self, msg: dict):
+        """Handle incoming message."""
+        msg_type = msg.get('type')
+        
+        if msg_type == 'response':
+            request_id = msg.get('id')
+            with self._lock:
+                if request_id in self._pending:
+                    self._results[request_id] = msg
+                    self._pending[request_id].set()
+        
+        elif msg_type == 'event':
+            event_type = msg.get('event_type')
+            event_data = msg.get('event_data', {})
+            
+            handlers = self._event_handlers.get(event_type, [])
+            handlers += self._event_handlers.get('*', [])
+            
+            for handler in handlers:
+                try:
+                    handler(event_type, event_data)
+                except Exception as e:
+                    print(f"[{self.name}] Event handler error: {e}")
+        
+        elif msg_type == 'heartbeat':
+            # Respond to heartbeat
+            self._send_message({'type': 'heartbeat', 'id': str(uuid.uuid4())})
+
+
+# =============================================================================
+# MAIN PLUGIN CODE
+# =============================================================================
+
+def on_mod_changed(event_type: str, data: dict):
+    """Handle mod list changes."""
+    action = data.get('action', 'unknown')
+    mod = data.get('mod', 'unknown')
+    print(f"Mod {action}: {mod}")
+
+
+def on_profile_changed(event_type: str, data: dict):
+    """Handle profile changes."""
+    old_profile = data.get('old', 'None')
+    new_profile = data.get('new', 'None')
+    print(f"Profile changed: {old_profile} -> {new_profile}")
+
+
+def main():
+    """Main entry point."""
+    client = MO2BridgeClient()
+    
+    # Connect to bridge
+    if not client.connect(subscribe_events=['mod_list_changed', 'profile_changed']):
+        print("Failed to connect. Is MO2 running with the bridge plugin?")
+        return 1
+    
+    # Register event handlers
+    client.on_event('mod_list_changed', on_mod_changed)
+    client.on_event('profile_changed', on_profile_changed)
+    
+    try:
+        # Example API calls
+        profile = client.call('organizer.profileName')
+        print(f"Current profile: {profile}")
+        
+        mods = client.call('modList.allMods')
+        print(f"Installed mods: {len(mods)}")
+        
+        for mod in mods[:5]:
+            state = client.call('modList.state', mod)
+            priority = client.call('modList.priority', mod)
+            print(f"  - {mod}: state={state}, priority={priority}")
+        
+        # Keep running to receive events
+        print("\nListening for events... (Ctrl+C to exit)")
+        while client.connected:
+            time.sleep(1)
+            
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+    finally:
+        client.disconnect()
+    
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+```
+
+## 7.4 File Naming Conventions
+
+| Pattern | Behavior |
+|---------|----------|
+| `my_plugin.py` | ✅ Auto-started |
+| `tool_helper.py` | ✅ Auto-started |
+| `_disabled.py` | ❌ Ignored (starts with _) |
+| `__init__.py` | ❌ Ignored (starts with _) |
+| `readme.txt` | ❌ Ignored (not .py) |
+
+---
+
+# 8. Client Library
+
+## 8.1 Full-Featured Python Client
+
+```python
+"""
+MO2 Bridge Client Library
+A comprehensive client for interacting with MO2 AI Bridge.
+"""
+
+import os
+import sys
+import socket
+import json
+import time
+import threading
+import uuid
+from typing import Any, Dict, List, Optional, Callable, Union
+from dataclasses import dataclass, field
+from contextlib import contextmanager
+
+
+@dataclass
+class BridgeConfig:
+    """Configuration for bridge connection."""
+    host: str = '127.0.0.1'
+    port: int = 52525
+    name: str = 'PythonClient'
+    connect_timeout: float = 10.0
+    call_timeout: float = 30.0
+    auto_reconnect: bool = True
+    reconnect_delay: float = 5.0
+    subscribe_events: List[str] = field(default_factory=lambda: ['*'])
+
+
+class MO2BridgeError(Exception):
+    """Base exception for bridge errors."""
+    pass
+
+
+class ConnectionError(MO2BridgeError):
+    """Connection-related errors."""
+    pass
+
+
+class APIError(MO2BridgeError):
+    """API call errors."""
+    def __init__(self, message: str, traceback: str = None):
+        super().__init__(message)
+        self.traceback = traceback
+
+
+class TimeoutError(MO2BridgeError):
+    """Timeout errors."""
+    pass
+
+
+class MO2BridgeClient:
+    """
+    Full-featured client for MO2 AI Bridge.
+    
+    Features:
+    - Synchronous API calls
+    - Event subscription and handling
+    - Auto-reconnection
+    - Thread-safe operations
+    - Context manager support
+    """
+    
+    DELIMITER = b'\n\x00\x00\n'
+    
+    def __init__(self, config: BridgeConfig = None, **kwargs):
+        """
+        Initialize client.
+        
+        Args:
+            config: BridgeConfig instance
+            **kwargs: Override config values
+        """
+        # Use environment variables as defaults
+        default_config = BridgeConfig(
+            host=os.environ.get('MO2_BRIDGE_HOST', '127.0.0.1'),
+            port=int(os.environ.get('MO2_BRIDGE_PORT', '52525')),
+            name=os.environ.get('MO2_PLUGIN_NAME', 'PythonClient')
+        )
+        
+        self.config = config or default_config
+        for key, value in kwargs.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+        
+        self._socket: Optional[socket.socket] = None
+        self._client_id: Optional[str] = None
+        self._server_version: Optional[str] = None
+        self._available_methods: List[str] = []
+        self._available_events: List[str] = []
+        
+        self._connected = False
+        self._running = False
+        
+        self._pending: Dict[str, threading.Event] = {}
+        self._results: Dict[str, dict] = {}
+        self._lock = threading.Lock()
+        
+        self._event_handlers: Dict[str, List[Callable]] = {}
+        self._recv_thread: Optional[threading.Thread] = None
+    
+    # =========================================================================
+    # Connection Management
+    # =========================================================================
+    
+    def connect(self) -> bool:
+        """
+        Connect to MO2 Bridge server.
+        
+        Returns:
+            True if connected successfully
+        
+        Raises:
+            ConnectionError: If connection fails
+        """
+        try:
+            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._socket.settimeout(self.config.connect_timeout)
+            self._socket.connect((self.config.host, self.config.port))
+            
+            # Receive server handshake
+            handshake = self._recv_single_message()
+            if not handshake or handshake.get('type') != 'handshake':
+                raise ConnectionError("Invalid server handshake")
+            
+            result = handshake.get('result', {})
+            self._client_id = result.get('client_id')
+            self._server_version = result.get('server_version')
+            self._available_methods = result.get('available_methods', [])
+            self._available_events = result.get('available_events', [])
+            
+            # Send client handshake
+            self._send({
+                'type': 'handshake',
+                'id': str(uuid.uuid4()),
+                'kwargs': {
+                    'name': self.config.name,
+                    'subscribe_events': self.config.subscribe_events
+                }
+            })
+            
+            self._connected = True
+            self._running = True
+            
+            # Start receiver thread
+            self._recv_thread = threading.Thread(
+                target=self._receive_loop,
+                daemon=True,
+                name=f"BridgeRecv-{self.config.name}"
+            )
+            self._recv_thread.start()
+            
+            return True
+            
+        except socket.error as e:
+            raise ConnectionError(f"Failed to connect to {self.config.host}:{self.config.port}: {e}")
+    
+    def disconnect(self):
+        """Disconnect from server."""
+        self._running = False
+        self._connected = False
+        
+        if self._socket:
+            try:
+                self._socket.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            try:
+                self._socket.close()
+            except:
+                pass
+            self._socket = None
+        
+        # Wake up any pending calls
+        with self._lock:
+            for event in self._pending.values():
+                event.set()
+            self._pending.clear()
+            self._results.clear()
+    
+    def reconnect(self) -> bool:
+        """Reconnect to server."""
+        self.disconnect()
+        time.sleep(0.5)
+        return self.connect()
+    
+    @property
+    def connected(self) -> bool:
+        """Check if connected."""
+        return self._connected
+    
+    @property
+    def client_id(self) -> Optional[str]:
+        """Get client ID assigned by server."""
+        return self._client_id
+    
+    @property
+    def server_version(self) -> Optional[str]:
+        """Get server version."""
+        return self._server_version
+    
+    @property
+    def available_methods(self) -> List[str]:
+        """Get list of available API methods."""
+        return self._available_methods.copy()
+    
+    @property
+    def available_events(self) -> List[str]:
+        """Get list of available event types."""
+        return self._available_events.copy()
+    
+    def __enter__(self):
+        """Context manager entry."""
+        self.connect()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.disconnect()
+        return False
+    
+    # =========================================================================
+    # API Calls
+    # =========================================================================
+    
+    def call(self, method: str, *args, timeout: float = None, **kwargs) -> Any:
+        """
+        Call an MO2 API method.
+        
+        Args:
+            method: Method path (e.g., 'modList.allMods')
+            *args: Positional arguments
+            timeout: Override default timeout
+            **kwargs: Keyword arguments
+        
+        Returns:
+            Method result
+        
+        Raises:
+            ConnectionError: If not connected
+            TimeoutError: If call times out
+            APIError: If method returns an error
+        """
+        if not self._connected:
+            raise ConnectionError("Not connected to bridge")
+        
+        timeout = timeout or self.config.call_timeout
+        request_id = str(uuid.uuid4())
+        event = threading.Event()
+        
+        with self._lock:
+            self._pending[request_id] = event
+        
+        try:
+            self._send({
+                'type': 'request',
+                'id': request_id,
+                'method': method,
+                'args': list(args),
+                'kwargs': kwargs
+            })
+            
+            if not event.wait(timeout=timeout):
+                raise TimeoutError(f"Call to '{method}' timed out after {timeout}s")
+            
+            with self._lock:
+                result = self._results.pop(request_id, None)
+            
+            if not result:
+                raise APIError("No response received")
+            
+            if result.get('error'):
+                raise APIError(
+                    result['error'],
+                    result.get('error_traceback')
+                )
+            
+            return result.get('result')
+            
+        finally:
+            with self._lock:
+                self._pending.pop(request_id, None)
+                self._results.pop(request_id, None)
+    
+    def call_async(self, method: str, *args, 
+                   callback: Callable[[Any, Optional[Exception]], None] = None,
+                   **kwargs) -> str:
+        """
+        Call an MO2 API method asynchronously.
+        
+        Args:
+            method: Method path
+            *args: Positional arguments
+            callback: Function(result, error) called when complete
+            **kwargs: Keyword arguments
+        
+        Returns:
+            Request ID
+        """
+        request_id = str(uuid.uuid4())
+        
+        def async_call():
+            try:
+                result = self.call(method, *args, **kwargs)
+                if callback:
+                    callback(result, None)
+            except Exception as e:
+                if callback:
+                    callback(None, e)
+        
+        thread = threading.Thread(target=async_call, daemon=True)
+        thread.start()
+        
+        return request_id
+    
+    # =========================================================================
+    # Convenience Methods
+    # =========================================================================
+    
+    # --- Organizer ---
+    
+    def get_profile_name(self) -> str:
+        """Get current profile name."""
+        return self.call('organizer.profileName')
+    
+    def get_profile_path(self) -> str:
+        """Get current profile path."""
+        return self.call('organizer.profilePath')
+    
+    def get_mods_path(self) -> str:
+        """Get mods folder path."""
+        return self.call('organizer.modsPath')
+    
+    def get_downloads_path(self) -> str:
+        """Get downloads folder path."""
+        return self.call('organizer.downloadsPath')
+    
+    def get_overwrite_path(self) -> str:
+        """Get overwrite folder path."""
+        return self.call('organizer.overwritePath')
+    
+    def get_base_path(self) -> str:
+        """Get MO2 base path."""
+        return self.call('organizer.basePath')
+    
+    def refresh_mod_list(self, force: bool = False):
+        """Refresh the mod list."""
+        return self.call('organizer.refreshModList', force)
+    
+    def resolve_path(self, virtual_path: str) -> str:
+        """Resolve a virtual path to real path."""
+        return self.call('organizer.resolvePath', virtual_path)
+    
+    def find_files(self, path: str, pattern: str) -> List[str]:
+        """Find files matching pattern."""
+        return self.call('organizer.findFiles', path, pattern)
+    
+    # --- Mod List ---
+    
+    def get_all_mods(self) -> List[str]:
+        """Get list of all mod names."""
+        return self.call('modList.allMods')
+    
+    def get_mod_state(self, mod_name: str) -> int:
+        """Get mod state (0=missing, 1=inactive, 2=active)."""
+        return self.call('modList.state', mod_name)
+    
+    def set_mod_active(self, mod_name: str, active: bool) -> bool:
+        """Enable or disable a mod."""
+        return self.call('modList.setActive', mod_name, active)
+    
+    def get_mod_priority(self, mod_name: str) -> int:
+        """Get mod priority."""
+        return self.call('modList.priority', mod_name)
+    
+    def set_mod_priority(self, mod_name: str, priority: int) -> bool:
+        """Set mod priority."""
+        return self.call('modList.setPriority', mod_name, priority)
+    
+    def get_mod_display_name(self, mod_name: str) -> str:
+        """Get mod display name."""
+        return self.call('modList.displayName', mod_name)
+    
+    def is_mod_active(self, mod_name: str) -> bool:
+        """Check if mod is active."""
+        return self.get_mod_state(mod_name) == 2
+    
+    def get_active_mods(self) -> List[str]:
+        """Get list of active mod names."""
+        return [m for m in self.get_all_mods() if self.is_mod_active(m)]
+    
+    # --- Plugin List ---
+    
+    def get_all_plugins(self) -> List[str]:
+        """Get list of all plugin names."""
+        return self.call('pluginList.pluginNames')
+    
+    def get_plugin_state(self, plugin_name: str) -> int:
+        """Get plugin state."""
+        return self.call('pluginList.state', plugin_name)
+    
+    def set_plugin_state(self, plugin_name: str, state: int):
+        """Set plugin state (1=inactive, 2=active)."""
+        return self.call('pluginList.setState', plugin_name, state)
+    
+    def get_plugin_priority(self, plugin_name: str) -> int:
+        """Get plugin priority."""
+        return self.call('pluginList.priority', plugin_name)
+    
+    def get_plugin_load_order(self, plugin_name: str) -> int:
+        """Get plugin load order index."""
+        return self.call('pluginList.loadOrder', plugin_name)
+    
+    def is_plugin_active(self, plugin_name: str) -> bool:
+        """Check if plugin is active."""
+        return self.get_plugin_state(plugin_name) == 2
+    
+    def get_active_plugins(self) -> List[str]:
+        """Get list of active plugins."""
+        return [p for p in self.get_all_plugins() if self.is_plugin_active(p)]
+    
+    # =========================================================================
+    # Event Handling
+    # =========================================================================
+    
+    def on(self, event_type: str, handler: Callable[[str, dict], None]) -> 'MO2BridgeClient':
+        """
+        Register an event handler.
+        
+        Args:
+            event_type: Event type or '*' for all events
+            handler: Function(event_type, event_data)
+        
+        Returns:
+            self (for chaining)
+        """
+        if event_type not in self._event_handlers:
+            self._event_handlers[event_type] = []
+        self._event_handlers[event_type].append(handler)
+        return self
+    
+    def off(self, event_type: str, handler: Callable = None) -> 'MO2BridgeClient':
+        """
+        Remove event handler(s).
+        
+        Args:
+            event_type: Event type
+            handler: Specific handler to remove, or None to remove all
+        
+        Returns:
+            self (for chaining)
+        """
+        if event_type in self._event_handlers:
+            if handler is None:
+                del self._event_handlers[event_type]
+            else:
+                self._event_handlers[event_type] = [
+                    h for h in self._event_handlers[event_type] if h != handler
+                ]
+        return self
+    
+    def once(self, event_type: str, handler: Callable[[str, dict], None]) -> 'MO2BridgeClient':
+        """
+        Register a one-time event handler.
+        
+        Args:
+            event_type: Event type
+            handler: Function(event_type, event_data)
+        
+        Returns:
+            self (for chaining)
+        """
+        def wrapper(et, ed):
+            self.off(event_type, wrapper)
+            handler(et, ed)
+        
+        return self.on(event_type, wrapper)
+    
+    @contextmanager
+    def event_context(self, event_type: str, handler: Callable):
+        """
+        Context manager for temporary event handling.
+        
+        Usage:
+            with client.event_context('mod_list_changed', my_handler):
+                # handler is active
+                pass
+            # handler is removed
+        """
+        self.on(event_type, handler)
+        try:
+            yield
+        finally:
+            self.off(event_type, handler)
+    
+    # =========================================================================
+    # Internal Methods
+    # =========================================================================
+    
+    def _send(self, msg: dict):
+        """Send message to server."""
+        if not self._socket:
+            raise ConnectionError("Not connected")
+        
+        data = json.dumps(msg, default=str).encode('utf-8') + self.DELIMITER
+        self._socket.sendall(data)
+    
+    def _recv_single_message(self) -> Optional[dict]:
+        """Receive a single message (blocking)."""
+        buffer = b""
+        while self.DELIMITER not in buffer:
+            try:
+                chunk = self._socket.recv(65536)
+                if not chunk:
+                    return None
+                buffer += chunk
+            except socket.timeout:
+                continue
+        
+        msg_data, _ = buffer.split(self.DELIMITER, 1)
+        return json.loads(msg_data.decode('utf-8'))
+    
+    def _receive_loop(self):
+        """Background receive loop."""
+        buffer = b""
+        self._socket.settimeout(5.0)
+        
+        while self._running:
+            try:
+                data = self._socket.recv(65536)
+                if not data:
+                    break
+                
+                buffer += data
+                
+                while self.DELIMITER in buffer:
+                    msg_data, buffer = buffer.split(self.DELIMITER, 1)
+                    try:
+                        msg = json.loads(msg_data.decode('utf-8'))
+                        self._handle_message(msg)
+                    except json.JSONDecodeError:
+                        pass
+                
+                # Prevent buffer overflow
+                if len(buffer) > 1024 * 1024:
+                    buffer = b""
+                    
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self._running:
+                    print(f"[{self.config.name}] Receive error: {e}")
+                break
+        
+        self._connected = False
+        
+        # Auto-reconnect if enabled
+        if self._running and self.config.auto_reconnect:
+            print(f"[{self.config.name}] Connection lost, reconnecting...")
+            time.sleep(self.config.reconnect_delay)
+            try:
+                self.connect()
+            except:
+                pass
+    
+    def _handle_message(self, msg: dict):
+        """Handle incoming message."""
+        msg_type = msg.get('type')
+        
+        if msg_type == 'response':
+            request_id = msg.get('id')
+            with self._lock:
+                if request_id in self._pending:
+                    self._results[request_id] = msg
+                    self._pending[request_id].set()
+        
+        elif msg_type == 'event':
+            event_type = msg.get('event_type')
+            event_data = msg.get('event_data', {})
+            self._dispatch_event(event_type, event_data)
+        
+        elif msg_type == 'heartbeat':
+            try:
+                self._send({'type': 'heartbeat', 'id': str(uuid.uuid4())})
+            except:
+                pass
+    
+    def _dispatch_event(self, event_type: str, event_data: dict):
+        """Dispatch event to registered handlers."""
+        handlers = []
+        handlers.extend(self._event_handlers.get(event_type, []))
+        handlers.extend(self._event_handlers.get('*', []))
+        
+        for handler in handlers:
+            try:
+                handler(event_type, event_data)
+            except Exception as e:
+                print(f"[{self.config.name}] Event handler error: {e}")
+
+
+# =============================================================================
+# Convenience Functions
+# =============================================================================
+
+_default_client: Optional[MO2BridgeClient] = None
+
+
+def connect(**kwargs) -> MO2BridgeClient:
+    """Connect using default client."""
+    global _default_client
+    _default_client = MO2BridgeClient(**kwargs)
+    _default_client.connect()
+    return _default_client
+
+
+def disconnect():
+    """Disconnect default client."""
+    global _default_client
+    if _default_client:
+        _default_client.disconnect()
+        _default_client = None
+
+
+def call(method: str, *args, **kwargs) -> Any:
+    """Call method using default client."""
+    if not _default_client:
+        raise ConnectionError("Not connected. Call connect() first.")
+    return _default_client.call(method, *args, **kwargs)
+
+
+def on(event_type: str, handler: Callable):
+    """Register event handler on default client."""
+    if not _default_client:
+        raise ConnectionError("Not connected. Call connect() first.")
+    return _default_client.on(event_type, handler)
+```
+
+## 8.2 Usage Examples
+
+### Basic Connection
+
+```python
+from mo2_bridge_client import MO2BridgeClient
+
+# Simple connection
+client = MO2BridgeClient()
+client.connect()
+
+# Get mod list
+mods = client.get_all_mods()
+print(f"Found {len(mods)} mods")
+
+client.disconnect()
+```
+
+### Context Manager
+
+```python
+from mo2_bridge_client import MO2BridgeClient
+
+with MO2BridgeClient(name="MyTool") as client:
+    profile = client.get_profile_name()
+    print(f"Current profile: {profile}")
+    
+    for mod in client.get_active_mods()[:10]:
+        print(f"  - {mod}")
+# Automatically disconnected
+```
+
+### Event Handling
+
+```python
+from mo2_bridge_client import MO2BridgeClient
+import time
+
+def on_mod_change(event_type, data):
+    print(f"Mod changed: {data}")
+
+def on_any_event(event_type, data):
+    print(f"Event: {event_type}")
+
+client = MO2BridgeClient()
+client.connect()
+
+# Register handlers
+client.on('mod_list_changed', on_mod_change)
+client.on('*', on_any_event)
+
+# Keep running
+try:
+    while client.connected:
+        time.sleep(1)
+except KeyboardInterrupt:
+    client.disconnect()
+```
+
+### Batch Operations
+
+```python
+from mo2_bridge_client import MO2BridgeClient
+
+with MO2BridgeClient() as client:
+    # Disable all mods containing "test"
+    for mod in client.get_all_mods():
+        if 'test' in mod.lower():
+            client.set_mod_active(mod, False)
+            print(f"Disabled: {mod}")
+    
+    # Refresh mod list
+    client.refresh_mod_list()
+```
+
+---
+
+# 9. Advanced Topics
+
+## 9.1 Thread Safety
+
+The bridge is designed for multi-threaded access:
+
+- **APIExecutor**: Uses `threading.Condition` for synchronization
+- **IPCServer**: Each client runs in its own thread
+- **Client Library**: Thread-safe API calls with per-request events
+
+### Safe Usage Pattern
+
+```python
+import threading
+from mo2_bridge_client import MO2BridgeClient
+
+client = MO2BridgeClient()
+client.connect()
+
+def worker(mod_name):
+    # Safe to call from any thread
+    state = client.get_mod_state(mod_name)
+    print(f"{threading.current_thread().name}: {mod_name} = {state}")
+
+threads = []
+for mod in client.get_all_mods()[:10]:
+    t = threading.Thread(target=worker, args=(mod,))
+    threads.append(t)
+    t.start()
+
+for t in threads:
+    t.join()
+```
+
+## 9.2 Error Handling
+
+### Exception Hierarchy
+
+```
+MO2BridgeError
+├── ConnectionError    # Connection issues
+├── TimeoutError       # Call timeouts
+└── APIError           # MO2 API errors
+    └── .traceback     # Python traceback from server
+```
+
+### Robust Error Handling
+
+```python
+from mo2_bridge_client import (
+    MO2BridgeClient, 
+    ConnectionError, 
+    TimeoutError, 
+    APIError
+)
+
+client = MO2BridgeClient()
+
+try:
+    client.connect()
+except ConnectionError as e:
+    print(f"Cannot connect: {e}")
+    exit(1)
+
+try:
+    result = client.call('modList.state', 'NonexistentMod')
+except TimeoutError:
+    print("Request timed out")
+except APIError as e:
+    print(f"API error: {e}")
+    if e.traceback:
+        print(f"Server traceback:\n{e.traceback}")
+except ConnectionError:
+    print("Connection lost")
+```
+
+## 9.3 Performance Optimization
+
+### Batch Requests
+
+For multiple operations, batch them to reduce round-trips:
+
+```python
+# Slow: N round-trips
+for mod in mods:
+    state = client.get_mod_state(mod)
+
+# Better: Collect results
+results = {}
+for mod in mods:
+    results[mod] = client.call_async('modList.state', mod)
+```
+
+### Connection Pooling
+
+For high-throughput applications:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+class ClientPool:
+    def __init__(self, size: int = 5):
+        self.clients = []
+        for _ in range(size):
+            c = MO2BridgeClient()
+            c.connect()
+            self.clients.append(c)
+        self.executor = ThreadPoolExecutor(max_workers=size)
+        self._index = 0
+    
+    def call(self, method, *args, **kwargs):
+        client = self.clients[self._index % len(self.clients)]
+        self._index += 1
+        return client.call(method, *args, **kwargs)
+```
+
+## 9.4 Custom Serialization
+
+The bridge serializes MO2 objects to JSON. For custom handling:
+
+```python
+def deserialize_mod_info(data):
+    """Convert bridge response to custom object."""
+    if isinstance(data, dict) and '__type__' in data:
+        type_name = data['__type__']
+        if type_name == 'IModInterface':
+            return ModInfo(name=data.get('name'))
+    return data
+
+# Use in calls
+raw = client.call('organizer.modList')
+mod_list = deserialize_mod_info(raw)
+```
+
+## 9.5 Logging and Debugging
+
+### Enable Detailed Logging
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(name)s] %(levelname)s: %(message)s'
+)
+
+# Add to client
+class DebugClient(MO2BridgeClient):
+    def _send(self, msg):
+        logging.debug(f"SEND: {msg}")
+        super()._send(msg)
+    
+    def _handle_message(self, msg):
+        logging.debug(f"RECV: {msg}")
+        super()._handle_message(msg)
+```
+
+### Message Inspection
+
+```python
+# In external plugin, log all messages
+client.on('*', lambda et, ed: print(f"[EVENT] {et}: {ed}"))
+```
+
+---
+
+# 10. Troubleshooting
+
+## 10.1 Common Issues
+
+### Issue: "Connection refused"
+
+**Symptoms:**
+```
+ConnectionError: Failed to connect to 127.0.0.1:52525: [WinError 10061]
+```
+
+**Solutions:**
+1. Ensure MO2 is running
+2. Check that AI Bridge plugin is loaded (Tools menu)
+3. Verify port number in control panel
+4. Check firewall settings for localhost
+
+---
+
+### Issue: "Недостаточно системных ресурсов" (Insufficient system resources)
+
+**Symptoms:**
+```
+QSettings: failed to set subkey "history" (Insufficient system resources)
+```
+
+**Cause:** Too many `threading.Event` objects created
+
+**Solution:** Update to v1.3.0+ which uses single `Condition` object
+
+---
+
+### Issue: API calls timeout
+
+**Symptoms:**
+```
+TimeoutError: Call to 'modList.allMods' timed out after 30.0s
+```
+
+**Solutions:**
+1. Increase timeout: `client.call('method', timeout=60)`
+2. Check if MO2 is busy (loading mods, etc.)
+3. Restart MO2 and reconnect
+
+---
+
+### Issue: Events not received
+
+**Symptoms:** Event handlers never called
+
+**Solutions:**
+1. Verify subscription: `subscribe_events: ['*']`
+2. Check handler registration: `client.on('event_type', handler)`
+3. Ensure client stays connected (main loop running)
+
+---
+
+### Issue: Plugin not auto-starting
+
+**Symptoms:** External plugin in folder but not running
+
+**Solutions:**
+1. Check filename doesn't start with `_`
+2. Verify `.py` extension
+3. Check for syntax errors: `python -m py_compile script.py`
+4. Look for errors in MO2 log
+
+---
+
+## 10.2 Debug Mode
+
+Enable verbose logging in the plugin:
+
+```python
+# Add to mo2_ai_bridge.py
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+Or in your client:
+
+```python
+import os
+os.environ['MO2_BRIDGE_DEBUG'] = '1'
+```
+
+## 10.3 Connection Diagnostics
+
+```python
+import socket
+
+def diagnose_connection(host='127.0.0.1', port=52525):
+    print(f"Testing connection to {host}:{port}...")
+    
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        result = sock.connect_ex((host, port))
+        
+        if result == 0:
+            print("✅ Port is open")
+            
+            # Try to receive handshake
+            sock.settimeout(5)
+            data = sock.recv(4096)
+            if data:
+                print(f"✅ Received data: {len(data)} bytes")
+                print(f"   Preview: {data[:100]}")
+            else:
+                print("⚠️ No data received")
+        else:
+            print(f"❌ Connection failed: error code {result}")
+            
+    except socket.timeout:
+        print("❌ Connection timed out")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        sock.close()
+
+diagnose_connection()
+```
+
+---
+
+# 11. FAQ
+
+## General
+
+**Q: Can I use this with games other than Skyrim?**
+
+A: Yes! The bridge works with any game supported by MO2. The API is game-agnostic.
+
+---
+
+**Q: Is it safe to modify mods while the game is running?**
+
+A: MO2 prevents this by design. Changes take effect when the game is restarted.
+
+---
+
+**Q: Can multiple clients connect simultaneously?**
+
+A: Yes, up to 50 clients by default. Each gets independent event streams.
+
+---
+
+**Q: Does this work over network?**
+
+A: By default, no - it binds to localhost only for security. You can modify the code to bind to 0.0.0.0, but this is not recommended.
+
+---
+
+## Technical
+
+**Q: Why use TCP instead of named pipes or shared memory?**
+
+A: TCP provides:
+- Cross-process compatibility
+- Language-agnostic protocol (JSON)
+- Built-in message framing
+- Easy debugging (can use telnet/netcat)
+
+---
+
+**Q: What happens if my external plugin crashes?**
+
+A: The bridge continues running. The crash is logged, and you can restart the plugin from the control panel.
+
+---
+
+**Q: Can I call any MO2 API method?**
+
+A: The bridge exposes a curated set of safe methods. Adding more requires modifying `_generate_methods()` in `APIExecutor`.
+
+---
+
+**Q: How do I add new API methods?**
+
+A: Edit the `_generate_methods` function in `APIExecutor`:
+
+```python
+def _generate_methods(self) -> None:
+    methods = [
+        # Existing methods...
+        "modList.allMods",
+        # Add new ones:
+        "organizer.newMethod",
+    ]
+```
+
+---
+
+# 12. Changelog
+
+## Version 1.3.0 (Current)
+
+**Resource Optimization Release**
+
+- 🔧 **Fixed**: Replaced per-request `threading.Event` with single `threading.Condition`
+- 🔧 **Fixed**: Eliminated Windows kernel handle exhaustion
+- ✨ **Added**: Proper request cleanup on timeout
+- ✨ **Added**: Stale request detection
+- 📝 **Improved**: Documentation and error messages
+
+## Version 1.2.0
+
+**Thread Safety Release**
+
+- 🔧 **Fixed**: Added missing `_send_to_client` method
+- 🔧 **Fixed**: Removed duplicate `_handle_client` method
+- 🔧 **Fixed**: Race conditions in request handling
+- ✨ **Added**: Client send lock for thread-safe transmission
+- ✨ **Added**: Proper graceful shutdown
+- ✨ **Added**: Client limit (MAX_CLIENTS = 50)
+
+## Version 1.1.0
+
+**Initial Stable Release**
+
+- ✨ TCP/IP-based IPC server
+- ✨ Thread-safe API execution via Qt signals
+- ✨ Event broadcasting system
+- ✨ External plugin auto-start
+- ✨ Control panel GUI
+- ✨ Heartbeat mechanism
+
+---
+
+# Appendix A: Quick Reference Card
+
+## Connection
+
+```python
+from mo2_bridge_client import MO2BridgeClient
+
+client = MO2BridgeClient(host='127.0.0.1', port=52525)
+client.connect()
+# ... use client ...
+client.disconnect()
+
+# Or with context manager:
+with MO2BridgeClient() as client:
+    pass
+```
+
+## Common API Calls
+
+```python
+# Profile
+client.call('organizer.profileName')
+client.call('organizer.profilePath')
+
+# Mods
+client.call('modList.allMods')
+client.call('modList.state', 'ModName')
+client.call('modList.setActive', 'ModName', True)
+client.call('modList.priority', 'ModName')
+
+# Plugins
+client.call('pluginList.pluginNames')
+client.call('pluginList.state', 'Plugin.esp')
+client.call('pluginList.setState', 'Plugin.esp', 2)
+
+# Paths
+client.call('organizer.modsPath')
+client.call('organizer.downloadsPath')
+client.call('organizer.resolvePath', 'virtual/path')
+```
+
+## Events
+
+```python
+# Subscribe to specific events
+client = MO2BridgeClient()
+client.config.subscribe_events = ['mod_list_changed', 'profile_changed']
+client.connect()
+
+# Handle events
+client.on('mod_list_changed', lambda t, d: print(f"Mod: {d}"))
+client.on('*', lambda t, d: print(f"Any: {t}"))
+```
+
+## Message Format
+
+```json
+{
+    "type": "request",
+    "id": "uuid",
+    "method": "interface.method",
+    "args": [],
+    "kwargs": {}
+}
+```
+
+Delimiter: `\n\x00\x00\n` (4 bytes)
+
+---
+
+*Documentation version: 1.3.0*
+*Last updated: 2024*
