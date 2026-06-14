@@ -3,7 +3,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -23,6 +26,26 @@ namespace FalloutLauncher
         private Process? mo2Process;
         private bool isMaximized = false;
         private WindowState savedState = WindowState.Normal;
+
+        // MO2 Bridge
+        private Mo2BridgeClient? _bridge;
+        private Process? _bridgeMo2Process;
+        private bool _bridgeReady;
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        private const int SW_HIDE = 0;
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
 
         private static readonly string SettingsPath =
             Path.Combine(
@@ -61,7 +84,24 @@ namespace FalloutLauncher
         // CUSTOM WINDOW CHROME — close, minimize, maximize, drag
         // ==================================================================
 
-        private void BtnClose_Click(object sender, RoutedEventArgs e) => Close();
+        private async void BtnClose_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
+        /// <summary>При изменении размера окна — подстраиваем высоту лога пропорционально.</summary>
+        private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            // Лог = ~25% от высоты окна, но не меньше 80 и не больше 400
+            double newHeight = Math.Clamp(e.NewSize.Height * 0.25, 80, 400);
+            logContent.Height = newHeight;
+        }
+
+        /// <summary>Закрытие окна (Alt+F4, системная кнопка).</summary>
+        private void MainWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            ShutdownBridgeAsync().GetAwaiter().GetResult();
+        }
 
         private void BtnMinimize_Click(object sender, RoutedEventArgs e) =>
             WindowState = WindowState.Minimized;
@@ -169,7 +209,7 @@ namespace FalloutLauncher
             string gamePath = FindGamePath() ?? "не найден";
 
             MessageBox.Show(
-                $"FEH Launcher by WhiteNight v1.1.0\n\n" +
+                $"FEH Launcher by WhiteNight v1.2.0\n\n" +
                 $"Лаунчер для Fallout 4 с поддержкой MO2 и F4SE\n\n" +
                 $"Профиль: {PROFILE_NAME}\n" +
                 $"MO2: {mo2Dir}\n" +
@@ -308,7 +348,11 @@ namespace FalloutLauncher
             Dispatcher.Invoke(() =>
             {
                 txtLog.AppendText(logEntry);
-                txtLog.ScrollToEnd();
+
+                // Автоскролл: крутим ScrollViewer, а не TextBox (TextBox внутри ScrollViewer)
+                if (logScrollViewer != null)
+                    logScrollViewer.ScrollToBottom();
+
                 lblStatusBar.Text = message;
             });
         }
@@ -623,6 +667,9 @@ namespace FalloutLauncher
             btnMo2Only.IsEnabled = false;
             txtLog.Clear();
 
+            // Закрываем фоновый MO2 (bridge), если был запущен
+            await ShutdownBridgeAsync();
+
             try
             {
                 if (!PrepareBasicEnvironment(out string mo2Path, out string mo2Dir))
@@ -688,6 +735,9 @@ namespace FalloutLauncher
             btnMo2Only.IsEnabled = false;
             txtLog.Clear();
 
+            // Закрываем фоновый MO2 (bridge), если был запущен
+            await ShutdownBridgeAsync();
+
             try
             {
                 if (!PrepareBasicEnvironment(out string mo2Path, out string mo2Dir))
@@ -749,10 +799,14 @@ namespace FalloutLauncher
         // MODS SLIDING PANEL
         // ==================================================================
 
-        private void OpenModsPanel()
+        private async void OpenModsPanel()
         {
             if (modsPanelRoot.Visibility == Visibility.Visible)
                 return;
+
+            // Запускаем MO2 + bridge, если ещё не запущен
+            if (!_bridgeReady)
+                await AutoStartMo2BridgeAsync();
 
             string mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
             string modlistPath = Path.Combine(mo2Dir, "profiles", PROFILE_NAME, "modlist.txt");
@@ -772,7 +826,7 @@ namespace FalloutLauncher
             // Load mods into the panel
             modsControl.CloseRequested -= ModsPanel_CloseRequested;
             modsControl.CloseRequested += ModsPanel_CloseRequested;
-            modsControl.LoadData(mo2Dir, PROFILE_NAME);
+            modsControl.LoadData(mo2Dir, PROFILE_NAME, _bridgeReady ? _bridge : null);
 
             // Calculate optimal panel width based on longest mod name
             double panelWidth = modsControl.GetOptimalWidth();
@@ -821,12 +875,19 @@ namespace FalloutLauncher
             Storyboard.SetTargetProperty(slideOut, new PropertyPath("(UIElement.RenderTransform).(TranslateTransform.X)"));
             sb.Children.Add(slideOut);
 
-            sb.Completed += (s, args) =>
+            sb.Completed += async (s, args) =>
             {
                 modsPanelRoot.Visibility = Visibility.Collapsed;
                 modsOverlay.Visibility = Visibility.Collapsed;
                 navHome.IsChecked = true;
                 Log("Список опциональных модов закрыт.");
+
+                // Закрываем фоновый MO2 после закрытия панели модов
+                if (_bridgeReady)
+                {
+                    Log("Bridge: закрытие MO2 после завершения работы с модами...");
+                    await ShutdownBridgeAsync();
+                }
             };
 
             sb.Begin();
@@ -985,6 +1046,130 @@ namespace FalloutLauncher
                 pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)); // оранжевый
             else
                 pbSaves.Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50)); // зелёный
+        }
+
+        // ==================================================================
+        // MO2 BRIDGE
+        // ==================================================================
+
+        /// <summary>Запустить MO2 и подключиться к bridge. Все окна MO2 скрываются через быстрый опрос EnumWindows.</summary>
+        private async Task AutoStartMo2BridgeAsync()
+        {
+            if (_bridgeReady) return;
+
+            if (!PrepareBasicEnvironment(out string mo2Path, out string mo2Dir))
+            {
+                Log("Bridge: MO2 не найден, bridge недоступен.");
+                return;
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = mo2Path,
+                Arguments = $"-p \"{PROFILE_NAME}\"",
+                WorkingDirectory = mo2Dir,
+                UseShellExecute = false
+            };
+
+            try
+            {
+                Log("Bridge: запуск MO2...");
+                _bridgeMo2Process = Process.Start(psi);
+                if (_bridgeMo2Process == null)
+                {
+                    Log("Bridge: не удалось запустить MO2.");
+                    return;
+                }
+
+                Log($"Bridge: MO2 запущен (PID: {_bridgeMo2Process.Id}).");
+
+                // Прячем все окна MO2 — опрос 10ms × 200 = до 2с (splash, диалоги, главное окно)
+                await HideMo2WindowsPollerAsync(_bridgeMo2Process, pollMs: 10, maxPolls: 200);
+
+                Log("Bridge: ожидание порта 52525...");
+
+                // Ждём пока откроется порт (таймаут 30с)
+                _bridge = new Mo2BridgeClient();
+                for (int i = 0; i < 30; i++)
+                {
+                    await Task.Delay(1000);
+
+                    if (Process.GetProcessById(_bridgeMo2Process.Id).HasExited)
+                    {
+                        Log("Bridge: MO2 завершился до подключения bridge.");
+                        return;
+                    }
+
+                    if (await _bridge.ConnectAsync())
+                    {
+                        _bridgeReady = true;
+                        Log("Bridge: подключён к MO2 AI Bridge.");
+
+                        // Ещё раз — могли появиться окна при загрузке плагинов
+                        await HideMo2WindowsPollerAsync(_bridgeMo2Process, pollMs: 10, maxPolls: 50);
+                        return;
+                    }
+                }
+
+                Log("Bridge: не удалось подключиться (таймаут 30с).");
+                await HideMo2WindowsPollerAsync(_bridgeMo2Process, pollMs: 50, maxPolls: 20);
+                _bridge?.Dispose();
+                _bridge = null;
+                _bridgeMo2Process?.Kill();
+                _bridgeMo2Process?.Dispose();
+                _bridgeMo2Process = null;
+            }
+            catch (Exception ex)
+            {
+                Log($"Bridge: ошибка: {ex.Message}");
+            }
+        }
+
+        /// <summary>Опрашивать все окна MO2 через EnumWindows, пряча каждое. Без раннего выхода — окна MO2 создаются последовательно (splash → главное).</summary>
+        private async Task HideMo2WindowsPollerAsync(Process process, int pollMs, int maxPolls)
+        {
+            uint pid = (uint)process.Id;
+            for (int i = 0; i < maxPolls; i++)
+            {
+                var found = new List<IntPtr>();
+                EnumWindows((hWnd, lParam) =>
+                {
+                    GetWindowThreadProcessId(hWnd, out uint wndPid);
+                    if (wndPid == pid && IsWindowVisible(hWnd))
+                        found.Add(hWnd);
+                    return true;
+                }, IntPtr.Zero);
+
+                if (found.Count > 0)
+                {
+                    foreach (var hWnd in found)
+                        ShowWindow(hWnd, SW_HIDE);
+                }
+                await Task.Delay(pollMs);
+            }
+        }
+
+        /// <summary>Отключить bridge и закрыть фоновый MO2.</summary>
+        private async Task ShutdownBridgeAsync()
+        {
+            _bridgeReady = false;
+
+            _bridge?.Disconnect();
+            _bridge?.Dispose();
+            _bridge = null;
+
+            if (_bridgeMo2Process != null && !_bridgeMo2Process.HasExited)
+            {
+                Log("Bridge: закрытие фонового MO2...");
+                _bridgeMo2Process.CloseMainWindow();
+                if (!_bridgeMo2Process.WaitForExit(5000))
+                {
+                    try { _bridgeMo2Process.Kill(); } catch { }
+                }
+                _bridgeMo2Process.Dispose();
+                _bridgeMo2Process = null;
+                Log("Bridge: фоновый MO2 закрыт.");
+            }
         }
 
         // ==================================================================

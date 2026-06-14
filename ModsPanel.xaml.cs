@@ -16,6 +16,7 @@ namespace FalloutLauncher
         private string _profileName = "";
         private Dictionary<int, string> _categories = new();
         private bool _useCategories = false;
+        private Mo2BridgeClient? _bridge;
 
         // Internal representation of each line in modlist.txt
         private class ModLine
@@ -71,10 +72,11 @@ namespace FalloutLauncher
             InitializeComponent();
         }
 
-        public void LoadData(string mo2Dir, string profileName)
+        public void LoadData(string mo2Dir, string profileName, Mo2BridgeClient? bridge = null)
         {
             _mo2Dir = mo2Dir;
             _profileName = profileName;
+            _bridge = bridge;
             _modlistPath = Path.Combine(mo2Dir, "profiles", profileName, "modlist.txt");
 
             if (!File.Exists(_modlistPath))
@@ -405,7 +407,7 @@ namespace FalloutLauncher
             catch { }
         }
 
-        private void BtnSave_Click(object sender, RoutedEventArgs e)
+        private async void BtnSave_Click(object sender, RoutedEventArgs e)
         {
             // Read checkbox states and track which mods changed
             var changedMods = new List<ModLine>();
@@ -422,39 +424,71 @@ namespace FalloutLauncher
                 }
             }
 
-            // Rebuild modlist.txt
-            var output = new List<string>();
-            foreach (ModLine line in _lines)
+            if (changedMods.Count == 0)
             {
-                if (line.IsSeparator)
-                {
-                    if (string.IsNullOrEmpty(line.Name))
-                        output.Add("");
-                    else
-                        output.Add($"#{line.Name}");
-                }
-                else
-                {
-                    // Use RawName (original from modlist.txt) to preserve exact format
-                    string saveName = !string.IsNullOrEmpty(line.RawName) ? line.RawName : line.Name;
-                    output.Add(line.IsEnabled ? $"+{saveName}" : $"-{saveName}");
-                }
-            }
-
-            try
-            {
-                File.WriteAllLines(_modlistPath, output);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка при сохранении:\n{ex.Message}",
-                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                CloseRequested?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
-            // Sync plugins.txt from reference file (preserves eternal plugin order)
-            if (changedMods.Count > 0)
-                SyncPluginsWithReference(changedMods);
+            // Если bridge доступен — сохраняем через MO2 API (рекомендуемый путь)
+            if (_bridge != null && _bridge.Connected)
+            {
+                var errors = new List<string>();
+                foreach (var mod in changedMods)
+                {
+                    try
+                    {
+                        await _bridge.SetModActiveAsync(mod.Name, mod.IsEnabled);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"'{mod.Name}': {ex.Message}");
+                    }
+                }
+                if (errors.Count > 0)
+                {
+                    MessageBox.Show(
+                        $"Не удалось изменить {errors.Count} модов:\n\n{string.Join("\n", errors.Take(5))}"
+                        + (errors.Count > 5 ? $"\n...и ещё {errors.Count - 5}" : ""),
+                        "Ошибка сохранения через Bridge",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            else
+            {
+                // Fallback: прямая запись modlist.txt (как было раньше)
+                var output = new List<string>();
+                foreach (ModLine line in _lines)
+                {
+                    if (line.IsSeparator)
+                    {
+                        if (string.IsNullOrEmpty(line.Name))
+                            output.Add("");
+                        else
+                            output.Add($"#{line.Name}");
+                    }
+                    else
+                    {
+                        string saveName = !string.IsNullOrEmpty(line.RawName) ? line.RawName : line.Name;
+                        output.Add(line.IsEnabled ? $"+{saveName}" : $"-{saveName}");
+                    }
+                }
+
+                try
+                {
+                    File.WriteAllLines(_modlistPath, output);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при сохранении:\n{ex.Message}",
+                        "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                // Sync plugins.txt from reference file (preserves eternal plugin order)
+                if (changedMods.Count > 0)
+                    SyncPluginsWithReference(changedMods);
+            }
 
             CloseRequested?.Invoke(this, EventArgs.Empty);
         }
