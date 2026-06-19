@@ -372,133 +372,133 @@
                                       Style="{StaticResource ModernScrollViewer}"
                                       Background="{DynamicResource BgBrush}"
                                       Padding="20">
-                                        <StackPanel x:Name="contentPanel">
+                            <StackPanel x:Name="contentPanel">
 
-                            <!-- ======== SECTION: Welcome ======== -->
-                            <Border Style="{StaticResource CardStyle}" Padding="20" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <TextBlock x:Name="txtWelcome"
+                                <!-- ======== SECTION: Welcome ======== -->
+                                <Border Style="{StaticResource CardStyle}" Padding="20" Margin="0,0,0,16">
+                                    <StackPanel>
+                                        <TextBlock x:Name="txtWelcome"
                                                Text="С возвращением!"
                                                FontFamily="{StaticResource FontPrimary}"
                                                FontSize="22"
                                                FontWeight="Bold"
                                                Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    <TextBlock Text="Fallout 4 готов к запуску через Mod Organizer 2"
+                                        <TextBlock Text="Fallout 4 готов к запуску через Mod Organizer 2"
                                                FontFamily="{StaticResource FontPrimary}"
                                                FontSize="13"
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                Margin="0,4,0,12"/>
-                                    <Border Background="{DynamicResource LogBgBrush}"
+                                        <Border Background="{DynamicResource LogBgBrush}"
                                             CornerRadius="6"
                                             Padding="12,8">
-                                        <TextBlock x:Name="txtGamePath"
+                                            <TextBlock x:Name="txtGamePath"
                                                    Text="Путь к игре: (определяется при запуске)"
                                                    FontFamily="{StaticResource FontMono}"
                                                    FontSize="11"
                                                    Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- ======== SECTION: Action Cards ======== -->
-                            <Grid Margin="0,0,0,16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <!-- Card: Launch F4SE -->
-                                <Button x:Name="btnLaunch" Grid.Column="0" Style="{StaticResource ActionCardBtn}" Margin="0,0,8,0"
-                                        Click="BtnLaunch_Click">
-                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <Path Width="28" Height="28" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M5,3 L19,12 L5,21 Z"/>
-                                        <TextBlock Text="Запустить F4SE"
-                                                   FontSize="13" FontWeight="SemiBold"
-                                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                                        <TextBlock Text="Fallout 4 + F4SE + MO2"
-                                                   FontSize="10"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </Border>
                                     </StackPanel>
-                                </Button>
+                                </Border>
 
-                                <!-- Card: Launch MO2 -->
-                                <Button x:Name="btnMo2Only" Grid.Column="1" Style="{StaticResource ActionCardBtn}" Margin="4,0"
-                                        Click="BtnLaunchMo2_Click">
-                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <Path Width="28" Height="28" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M22,19 A2,2 0 0,1 20,21 H4 A2,2 0 0,1 2,19 V5 A2,2 0 0,1 4,3 H9 L11,6 H20 A2,2 0 0,1 22,8 Z"/>
-                                        <TextBlock Text="Запустить MO2"
-                                                   FontSize="13" FontWeight="SemiBold"
-                                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                                        <TextBlock Text="Mod Organizer 2"
-                                                   FontSize="10"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </Button>
-
-                                <!-- Card: Mods -->
-                                <Button Grid.Column="2" Style="{StaticResource ActionCardBtn}" Margin="8,0,0,0"
-                                        Click="BtnMods_Click">
-                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <Path Width="28" Height="28" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M21,16 V8 A2,2 0 0,0 20,6.27 L13,2.27 A2,2 0 0,0 11,2.27 L4,6.27 A2,2 0 0,0 3,8 V16 A2,2 0 0,0 4,17.73 L11,21.73 A2,2 0 0,0 13,21.73 L20,17.73 A2,2 0 0,0 21,16 Z M3.27,6.96 L12,12.01 L20.73,6.96 M12,22.08 L12,12"/>
-                                        <TextBlock Text="Опциональные моды"
-                                                   FontSize="13" FontWeight="SemiBold"
-                                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                                        <TextBlock Text="Вкл/выкл опциональные"
-                                                   FontSize="10"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
-
-                            <!-- ======== SECTION: Saves ======== -->
-                            <Border Style="{StaticResource CardStyle}" Padding="16" Margin="0,0,0,16">
-                                <Grid>
+                                <!-- ======== SECTION: Action Cards ======== -->
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
 
-                                    <!-- Header -->
-                                    <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,0,0,10">
-                                        <Path Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" VerticalAlignment="Center" Margin="0,0,8,0" Data="M19,21 H5 A2,2 0 0,1 3,19 V5 A2,2 0 0,1 5,3 H16 L21,8 V19 A2,2 0 0,1 19,21 Z M17,21 V13 H7 V21 M7,3 V8 H15"/>
-                                        <TextBlock Text="Сохранения"
+                                    <!-- Card: Launch F4SE -->
+                                    <Button x:Name="btnLaunch" Grid.Column="0" Style="{StaticResource ActionCardBtn}" Margin="0,0,8,0"
+                                        Click="BtnLaunch_Click">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <Path Width="28" Height="28" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M5,3 L19,12 L5,21 Z"/>
+                                            <TextBlock Text="Запустить F4SE"
+                                                   FontSize="13" FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                                            <TextBlock Text="Fallout 4 + F4SE + MO2"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- Card: Launch MO2 -->
+                                    <Button x:Name="btnMo2Only" Grid.Column="1" Style="{StaticResource ActionCardBtn}" Margin="4,0"
+                                        Click="BtnLaunchMo2_Click">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <Path Width="28" Height="28" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M22,19 A2,2 0 0,1 20,21 H4 A2,2 0 0,1 2,19 V5 A2,2 0 0,1 4,3 H9 L11,6 H20 A2,2 0 0,1 22,8 Z"/>
+                                            <TextBlock Text="Запустить MO2"
+                                                   FontSize="13" FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                                            <TextBlock Text="Mod Organizer 2"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- Card: Mods -->
+                                    <Button Grid.Column="2" Style="{StaticResource ActionCardBtn}" Margin="8,0,0,0"
+                                        Click="BtnMods_Click">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <Path Width="28" Height="28" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" HorizontalAlignment="Center" Data="M21,16 V8 A2,2 0 0,0 20,6.27 L13,2.27 A2,2 0 0,0 11,2.27 L4,6.27 A2,2 0 0,0 3,8 V16 A2,2 0 0,0 4,17.73 L11,21.73 A2,2 0 0,0 13,21.73 L20,17.73 A2,2 0 0,0 21,16 Z M3.27,6.96 L12,12.01 L20.73,6.96 M12,22.08 L12,12"/>
+                                            <TextBlock Text="Опциональные моды"
+                                                   FontSize="13" FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                                            <TextBlock Text="Вкл/выкл опциональные"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <!-- ======== SECTION: Saves ======== -->
+                                <Border Style="{StaticResource CardStyle}" Padding="16" Margin="0,0,0,16">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Header -->
+                                        <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,0,0,10">
+                                            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" VerticalAlignment="Center" Margin="0,0,8,0" Data="M19,21 H5 A2,2 0 0,1 3,19 V5 A2,2 0 0,1 5,3 H16 L21,8 V19 A2,2 0 0,1 19,21 Z M17,21 V13 H7 V21 M7,3 V8 H15"/>
+                                            <TextBlock Text="Сохранения"
                                                    FontFamily="{StaticResource FontPrimary}"
                                                    FontSize="15" FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                                    VerticalAlignment="Center"/>
-                                    </StackPanel>
+                                        </StackPanel>
 
-                                    <!-- Progress bar -->
-                                    <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                        <!-- Progress bar -->
+                                        <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                             Background="{DynamicResource LogBgBrush}"
                                             BorderThickness="0"
                                             CornerRadius="4"
                                             Height="10"
                                             VerticalAlignment="Center"
                                             Margin="0,0,12,0">
-                                        <ProgressBar x:Name="pbSaves"
+                                            <ProgressBar x:Name="pbSaves"
                                                      Minimum="0" Maximum="100"
                                                      BorderThickness="0"
                                                      Background="Transparent"
                                                      Foreground="#FF4CAF50"
                                                      Height="8"
                                                      Margin="1,0"/>
-                                    </Border>
+                                        </Border>
 
-                                    <!-- Size label -->
-                                    <TextBlock x:Name="lblSavesSize"
+                                        <!-- Size label -->
+                                        <TextBlock x:Name="lblSavesSize"
                                                Grid.Row="1" Grid.Column="2"
                                                Text="0.00 GB / 10.00 GB"
                                                FontFamily="{StaticResource FontPrimary}"
@@ -506,51 +506,51 @@
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                VerticalAlignment="Center"/>
 
-                                    <!-- Open saves button (below) -->
-                                    <Button Grid.Row="0" Grid.Column="2"
+                                        <!-- Open saves button (below) -->
+                                        <Button Grid.Row="0" Grid.Column="2"
                                             Style="{StaticResource StatusBarBtn}"
                                             Click="BtnOpenSaves_Click"
                                             ToolTip="Открыть папку сохранений">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="📁" FontSize="12" Margin="0,0,4,0"/>
-                                            <TextBlock Text="Открыть"/>
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-                            </Border>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="📁" FontSize="12" Margin="0,0,4,0"/>
+                                                <TextBlock Text="Открыть"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
 
-                            <!-- ======== SECTION: Log ======== -->
-                            <Border Style="{StaticResource CardStyle}" Padding="0" Margin="0,0,0,0">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="*" x:Name="logRow"/>
-                                    </Grid.RowDefinitions>
+                                <!-- ======== SECTION: Log ======== -->
+                                <Border Style="{StaticResource CardStyle}" Padding="0" Margin="0,0,0,0">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*" x:Name="logRow"/>
+                                        </Grid.RowDefinitions>
 
-                                    <!-- Log header (toggler) -->
-                                    <Border Grid.Row="0"
+                                        <!-- Log header (toggler) -->
+                                        <Border Grid.Row="0"
                                             Background="{DynamicResource SurfaceBrush}"
                                             CornerRadius="8,8,0,0"
                                             BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="0,0,0,1"
                                             Padding="14,10">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
 
-                                            <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                                <Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" VerticalAlignment="Center" Margin="0,0,8,0" Data="M14,2 H6 A2,2 0 0,0 4,4 V20 A2,2 0 0,0 6,22 H18 A2,2 0 0,0 20,20 V8 Z M14,2 L14,8 L20,8 M16,13 H8 M16,17 H8"/>
-                                                <TextBlock Text="Журнал"
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                    <Path Width="16" Height="16" Stretch="Uniform" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.8" Fill="Transparent" VerticalAlignment="Center" Margin="0,0,8,0" Data="M14,2 H6 A2,2 0 0,0 4,4 V20 A2,2 0 0,0 6,22 H18 A2,2 0 0,0 20,20 V8 Z M14,2 L14,8 L20,8 M16,13 H8 M16,17 H8"/>
+                                                    <TextBlock Text="Журнал"
                                                            FontFamily="{StaticResource FontPrimary}"
                                                            FontSize="13" FontWeight="SemiBold"
                                                            Foreground="{DynamicResource TextPrimaryBrush}"
                                                            VerticalAlignment="Center"/>
-                                            </StackPanel>
+                                                </StackPanel>
 
-                                            <TextBlock x:Name="txtStatus"
+                                                <TextBlock x:Name="txtStatus"
                                                        Grid.Column="1"
                                                        Text="Готов к запуску"
                                                        FontFamily="{StaticResource FontPrimary}"
@@ -560,7 +560,7 @@
                                                        Margin="16,0,0,0"
                                                        TextTrimming="CharacterEllipsis"/>
 
-                                            <ToggleButton x:Name="btnToggleLog"
+                                                <ToggleButton x:Name="btnToggleLog"
                                                           Grid.Column="2"
                                                            Background="Transparent"
                                                           BorderThickness="0"
@@ -568,35 +568,35 @@
                                                           ToolTip="Свернуть/развернуть лог"
                                                           Checked="LogToggle_Changed"
                                                           Unchecked="LogToggle_Changed">
-                                                <ToggleButton.Template>
-                                                    <ControlTemplate TargetType="ToggleButton">
-                                                        <Border Background="{TemplateBinding Background}"
+                                                    <ToggleButton.Template>
+                                                        <ControlTemplate TargetType="ToggleButton">
+                                                            <Border Background="{TemplateBinding Background}"
                                                                 CornerRadius="4"
                                                                 Padding="6,2">
-                                                            <TextBlock x:Name="arrow" Text="▼"
+                                                                <TextBlock x:Name="arrow" Text="▼"
                                                                        FontSize="10"
                                                                        Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                        </Border>
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsChecked" Value="False">
-                                                                <Setter TargetName="arrow" Property="Text" Value="▲"/>
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </ToggleButton.Template>
-                                            </ToggleButton>
-                                        </Grid>
-                                    </Border>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsChecked" Value="False">
+                                                                    <Setter TargetName="arrow" Property="Text" Value="▲"/>
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </ToggleButton.Template>
+                                                </ToggleButton>
+                                            </Grid>
+                                        </Border>
 
-                                    <!-- Log content -->
-                                    <Border Grid.Row="1"
+                                        <!-- Log content -->
+                                        <Border Grid.Row="1"
                                             Background="{DynamicResource LogBgBrush}"
                                             CornerRadius="0,0,8,8"
                                             Padding="14,10"
                                             x:Name="logContent"
                                             Height="140">
-                                        <ScrollViewer x:Name="logScrollViewer" Style="{StaticResource ModernScrollViewer}">
-                                            <TextBox x:Name="txtLog"
+                                            <ScrollViewer x:Name="logScrollViewer" Style="{StaticResource ModernScrollViewer}">
+                                                <TextBox x:Name="txtLog"
                                                      IsReadOnly="True"
                                                      FontFamily="{StaticResource FontMono}"
                                                      FontSize="11"
@@ -605,14 +605,14 @@
                                                      BorderThickness="0"
                                                      TextWrapping="Wrap"
                                                      AcceptsReturn="True"/>
-                                        </ScrollViewer>
-                                    </Border>
-                                </Grid>
-                            </Border>
+                                            </ScrollViewer>
+                                        </Border>
+                                    </Grid>
+                                </Border>
 
-                        </StackPanel>
-                    </ScrollViewer>
-                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
 
                     <!-- ─── Overlay backdrop (panel open) ─── -->
                     <Border x:Name="modsOverlay"
@@ -661,6 +661,18 @@
                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                    VerticalAlignment="Center"/>
 
+                        <!-- Update check button -->
+                        <Button x:Name="btnCheckUpdate"
+                                Style="{StaticResource StatusBarBtn}"
+                                Click="BtnCheckUpdate_Click"
+                                ToolTip="Проверить обновления"
+                                Visibility="Visible" Margin="667,0,5,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="lblUpdateIcon" Text="🔄" FontSize="12" Margin="0,0,4,0"/>
+                                <TextBlock x:Name="lblUpdateText" Text="Check Update" Width="75"/>
+                            </StackPanel>
+                        </Button>
+
                         <!-- Discord button -->
                         <Button Grid.Column="2"
                                 Style="{StaticResource StatusBarBtn}"
@@ -684,7 +696,7 @@
 
                         <!-- Version -->
                         <TextBlock Grid.Column="3"
-                                   Text="v1.2.0"
+                                   Text="v1.2.1"
                                    FontFamily="{StaticResource FontPrimary}"
                                    FontSize="11"
                                    Foreground="{DynamicResource TextSecondaryBrush}"

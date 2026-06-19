@@ -78,6 +78,41 @@ namespace FalloutLauncher
             }
             else
                 Log("Игра не найдена автоматически. Выберите папку вручную при запуске.");
+
+            // Фоновая проверка обновлений
+            _ = CheckForUpdateSilentAsync();
+        }
+
+        /// <summary>Тихая проверка обновлений при старте — без всплывающих окон.</summary>
+        private async Task CheckForUpdateSilentAsync()
+        {
+            try
+            {
+                _updateChecker ??= new UpdateChecker();
+                var updateAvailable = await _updateChecker.CheckForUpdateAsync();
+
+                if (updateAvailable)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        lblUpdateIcon.Text = "⬇";
+                        lblUpdateText.Text = $"v{_updateChecker!.LatestVersion} доступно";
+                        btnCheckUpdate.ToolTip = $"Нажмите, чтобы обновиться до v{_updateChecker.LatestVersion}";
+                        Log($"Доступно обновление v{_updateChecker.LatestVersion}. Нажмите «Проверить» для установки.");
+                    });
+                }
+                else
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        Log($"Обновлений нет. Текущая версия: v{UpdateChecker.CurrentVersion}");
+                    });
+                }
+            }
+            catch
+            {
+                // Тихая проверка — молчим при ошибке
+            }
         }
 
         // ==================================================================
@@ -209,7 +244,7 @@ namespace FalloutLauncher
             string gamePath = FindGamePath() ?? "не найден";
 
             MessageBox.Show(
-                $"FEH Launcher by WhiteNight v1.2.0\n\n" +
+                $"FEH Launcher by WhiteNight v1.2.1\n\n" +
                 $"Лаунчер для Fallout 4 с поддержкой MO2 и F4SE\n\n" +
                 $"Профиль: {PROFILE_NAME}\n" +
                 $"MO2: {mo2Dir}\n" +
@@ -1205,6 +1240,119 @@ namespace FalloutLauncher
             }
             catch { }
             return new AppSettings();
+        }
+
+        // ==================================================================
+        // UPDATE CHECKER (GitHub Releases)
+        // ==================================================================
+
+        private UpdateChecker? _updateChecker;
+
+        private async void BtnCheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            await CheckForUpdateAsync();
+        }
+
+        /// <summary>Проверить обновления и показать результат пользователю.</summary>
+        private async Task CheckForUpdateAsync()
+        {
+            try
+            {
+                btnCheckUpdate.IsEnabled = false;
+                lblUpdateIcon.Text = "⏳";
+                lblUpdateText.Text = "Проверка...";
+
+                _updateChecker ??= new UpdateChecker();
+                var updateAvailable = await _updateChecker.CheckForUpdateAsync();
+
+                if (updateAvailable)
+                {
+                    var result = MessageBox.Show(
+                        $"Доступно обновление v{_updateChecker.LatestVersion}!\n\n" +
+                        $"Текущая версия: v{UpdateChecker.CurrentVersion}\n\n" +
+                        "Скачать и установить обновление?",
+                        "Обновление FEH Launcher",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        await DownloadAndApplyUpdateAsync();
+                    }
+                    else
+                    {
+                        lblUpdateIcon.Text = "⬇";
+                        lblUpdateText.Text = $"v{_updateChecker.LatestVersion} доступно";
+                        btnCheckUpdate.IsEnabled = true;
+                    }
+                }
+                else
+                {
+                    lblUpdateIcon.Text = "✅";
+                    lblUpdateText.Text = "Актуальная версия";
+                    Log($"Обновлений нет. Текущая версия: v{UpdateChecker.CurrentVersion}");
+
+                    // Через 5 секунд вернуть исходный текст
+                    _ = Task.Delay(5000).ContinueWith(_ =>
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            lblUpdateIcon.Text = "🔄";
+                            lblUpdateText.Text = "Проверить";
+                            btnCheckUpdate.IsEnabled = true;
+                        });
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка проверки обновлений: {ex.Message}");
+                lblUpdateIcon.Text = "⚠";
+                lblUpdateText.Text = "Ошибка";
+                btnCheckUpdate.IsEnabled = true;
+            }
+        }
+
+        /// <summary>Скачать обновление и применить.</summary>
+        private async Task DownloadAndApplyUpdateAsync()
+        {
+            try
+            {
+                lblUpdateIcon.Text = "⏳";
+                lblUpdateText.Text = "Скачивание...";
+                btnCheckUpdate.IsEnabled = false;
+                Log($"Скачивание обновления v{_updateChecker?.LatestVersion}...");
+
+                var progress = new Progress<int>(p =>
+                {
+                    lblUpdateText.Text = $"Скачивание... {p}%";
+                });
+
+                var updateFile = await _updateChecker!.DownloadUpdateAsync(progress);
+
+                if (updateFile != null && File.Exists(updateFile))
+                {
+                    Log("Обновление скачано. Применение...");
+                    lblUpdateText.Text = "Применение...";
+
+                    // Запускаем updater и закрываем лаунчер
+                    UpdateChecker.ApplyUpdate(updateFile);
+                }
+                else
+                {
+                    Log("Ошибка: не удалось скачать обновление.");
+                    lblUpdateIcon.Text = "⚠";
+                    lblUpdateText.Text = "Ошибка скачивания";
+                    btnCheckUpdate.IsEnabled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка при скачивании обновления: {ex.Message}");
+                lblUpdateIcon.Text = "⚠";
+                lblUpdateText.Text = "Ошибка";
+                btnCheckUpdate.IsEnabled = true;
+            }
         }
     }
 
