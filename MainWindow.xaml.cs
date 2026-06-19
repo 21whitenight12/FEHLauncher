@@ -256,7 +256,7 @@ namespace FalloutLauncher
             string gamePath = FindGamePath() ?? "не найден";
 
             MessageBox.Show(
-                $"FEH Launcher by WhiteNight v1.2.1\n\n" +
+                $"FEH Launcher by WhiteNight v1.2.2\n\n" +
                 $"Лаунчер для Fallout 4 с поддержкой MO2 и F4SE\n\n" +
                 $"Профиль: {PROFILE_NAME}\n" +
                 $"MO2: {mo2Dir}\n" +

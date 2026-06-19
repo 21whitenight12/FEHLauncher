@@ -705,7 +705,7 @@
 
                         <!-- Version -->
                         <TextBlock Grid.Column="3"
-                                   Text="v1.2.1"
+                                   Text="v1.2.2"
                                    FontFamily="{StaticResource FontPrimary}"
                                    FontSize="11"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
