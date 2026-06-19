@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -31,6 +31,8 @@ namespace FalloutLauncher
         private Mo2BridgeClient? _bridge;
         private Process? _bridgeMo2Process;
         private bool _bridgeReady;
+        private bool _bridgeOwnsMo2; // true если лаунчер сам запустил MO2 (можно убивать при закрытии)
+        private bool _isExpertMode;
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -46,6 +48,15 @@ namespace FalloutLauncher
 
         [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int x, int y, int cx, int cy, uint uFlags);
+        private const uint SWP_HIDEWINDOW = 0x0080;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_NOZORDER = 0x0004;
 
         private static readonly string SettingsPath =
             Path.Combine(
@@ -75,6 +86,7 @@ namespace FalloutLauncher
             {
                 txtGamePath.Text = $"📂 {gamePath}";
                 Log("Игра найдена. Готов к запуску.");
+            UpdateExpertModeIndicator();
             }
             else
                 Log("Игра не найдена автоматически. Выберите папку вручную при запуске.");
@@ -863,6 +875,10 @@ namespace FalloutLauncher
             modsControl.CloseRequested += ModsPanel_CloseRequested;
             modsControl.LoadData(mo2Dir, PROFILE_NAME, _bridgeReady ? _bridge : null);
 
+            // Ещё раз скрываем окна MO2 — при чтении meta.ini / категорий могли появиться диалоги
+            if (_bridgeMo2Process != null && !_bridgeMo2Process.HasExited)
+                await HideMo2WindowsPollerAsync(_bridgeMo2Process, pollMs: 10, maxPolls: 50);
+
             // Calculate optimal panel width based on longest mod name
             double panelWidth = modsControl.GetOptimalWidth();
             modsPanelRoot.Width = panelWidth;
@@ -1098,16 +1114,52 @@ namespace FalloutLauncher
                 return;
             }
 
-            var psi = new ProcessStartInfo
-            {
-                FileName = mo2Path,
-                Arguments = $"-p \"{PROFILE_NAME}\"",
-                WorkingDirectory = mo2Dir,
-                UseShellExecute = false
-            };
-
             try
             {
+                // 1. Проверяем, не запущен ли MO2 уже (например, пользователь запустил вручную)
+                string mo2ProcessName = Path.GetFileNameWithoutExtension(mo2Path);
+                var existingProcesses = Process.GetProcessesByName(mo2ProcessName);
+
+                if (existingProcesses.Length > 0)
+                {
+                    _bridgeMo2Process = existingProcesses[0];
+                    _bridgeOwnsMo2 = false; // не наш процесс — не убиваем
+                    Log($"Bridge: MO2 уже запущен (PID: {_bridgeMo2Process.Id}), подключаемся к существующему.");
+
+                    // Скрываем все видимые окна существующего MO2
+                    await HideMo2WindowsPollerAsync(_bridgeMo2Process, pollMs: 10, maxPolls: 200);
+
+                    // Пытаемся подключиться к bridge существующего MO2
+                    _bridge = new Mo2BridgeClient();
+                    for (int i = 0; i < 10; i++)
+                    {
+                        await Task.Delay(500);
+                        if (await _bridge.ConnectAsync())
+                        {
+                            _bridgeReady = true;
+                            Log("Bridge: подключён к MO2 AI Bridge.");
+                            await HideMo2WindowsPollerAsync(_bridgeMo2Process, pollMs: 10, maxPolls: 50);
+                            return;
+                        }
+                    }
+
+                    // Bridge недоступен у существующего MO2 — продолжаем без него
+                    Log("Bridge: существующий MO2 не имеет AI Bridge. Работаем без bridge.");
+                    _bridge?.Dispose();
+                    _bridge = null;
+                    // Не убиваем существующий MO2 — пользователь его запустил сам
+                    return;
+                }
+
+                // 2. MO2 не запущен — запускаем новый экземпляр
+                var psi = new ProcessStartInfo
+                {
+                    FileName = mo2Path,
+                    Arguments = $"-p \"{PROFILE_NAME}\"",
+                    WorkingDirectory = mo2Dir,
+                    UseShellExecute = false
+                };
+
                 Log("Bridge: запуск MO2...");
                 _bridgeMo2Process = Process.Start(psi);
                 if (_bridgeMo2Process == null)
@@ -1117,6 +1169,7 @@ namespace FalloutLauncher
                 }
 
                 Log($"Bridge: MO2 запущен (PID: {_bridgeMo2Process.Id}).");
+                _bridgeOwnsMo2 = true; // наш процесс — можно убивать при закрытии
 
                 // Прячем все окна MO2 — опрос 10ms × 200 = до 2с (splash, диалоги, главное окно)
                 await HideMo2WindowsPollerAsync(_bridgeMo2Process, pollMs: 10, maxPolls: 200);
@@ -1129,9 +1182,11 @@ namespace FalloutLauncher
                 {
                     await Task.Delay(1000);
 
-                    if (Process.GetProcessById(_bridgeMo2Process.Id).HasExited)
+                    if (_bridgeMo2Process.HasExited)
                     {
                         Log("Bridge: MO2 завершился до подключения bridge.");
+                        _bridgeMo2Process?.Dispose();
+                        _bridgeMo2Process = null;
                         return;
                     }
 
@@ -1164,6 +1219,8 @@ namespace FalloutLauncher
         private async Task HideMo2WindowsPollerAsync(Process process, int pollMs, int maxPolls)
         {
             uint pid = (uint)process.Id;
+            int totalHidden = 0;
+
             for (int i = 0; i < maxPolls; i++)
             {
                 var found = new List<IntPtr>();
@@ -1178,13 +1235,79 @@ namespace FalloutLauncher
                 if (found.Count > 0)
                 {
                     foreach (var hWnd in found)
-                        ShowWindow(hWnd, SW_HIDE);
+                    {
+                        // SetWindowPos с SWP_HIDEWINDOW надёжнее ShowWindow(SW_HIDE) для Qt-окон
+                        SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0,
+                            SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER);
+                        totalHidden++;
+                    }
                 }
                 await Task.Delay(pollMs);
             }
+
+            Log($"Bridge: скрыто окон MO2: {totalHidden} (опрос {pollMs}ms × {maxPolls})");
         }
 
-        /// <summary>Отключить bridge и закрыть фоновый MO2.</summary>
+
+
+        // ==================================================================
+        // EXPERT MODE
+        // ==================================================================
+
+        /// <summary>
+        /// Сравнивает текущий loadorder.txt профиля с эталонным из папки launcher/.
+        /// Если отличаются — пользователь вручную менял плагины → Expert Mode.
+        /// </summary>
+        private bool CheckExpertMode()
+        {
+            string mo2Dir = AppDomain.CurrentDomain.BaseDirectory;
+            string refPath = Path.Combine(mo2Dir, "launcher", "loadorder.txt");
+            string curPath = Path.Combine(mo2Dir, "profiles", PROFILE_NAME, "loadorder.txt");
+
+            if (!File.Exists(refPath) || !File.Exists(curPath))
+                return false;
+
+            try
+            {
+                var refLines = File.ReadAllLines(refPath)
+                    .Select(l => l.Trim())
+                    .Where(l => l.Length > 0 && !l.StartsWith("#"))
+                    .ToList();
+
+                var curLines = File.ReadAllLines(curPath)
+                    .Select(l => l.Trim())
+                    .Where(l => l.Length > 0 && !l.StartsWith("#"))
+                    .ToList();
+
+                if (refLines.Count != curLines.Count)
+                    return true;
+
+                for (int i = 0; i < refLines.Count; i++)
+                {
+                    if (!string.Equals(refLines[i], curLines[i], StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch { return false; }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Обновляет видимость лейбла EXPERT в статус-баре.
+        /// </summary>
+        private void UpdateExpertModeIndicator()
+        {
+            _isExpertMode = CheckExpertMode();
+            bool show = _isExpertMode;
+            if (lblExpertMode.Visibility != (show ? Visibility.Visible : Visibility.Collapsed))
+            {
+                lblExpertMode.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                if (show)
+                    Log("Expert Mode: loadorder.txt отличается от эталона.");
+            }
+        }
+                /// <summary>Отключить bridge и закрыть фоновый MO2 (только если лаунчер сам его запустил).</summary>
         private async Task ShutdownBridgeAsync()
         {
             _bridgeReady = false;
@@ -1193,7 +1316,8 @@ namespace FalloutLauncher
             _bridge?.Dispose();
             _bridge = null;
 
-            if (_bridgeMo2Process != null && !_bridgeMo2Process.HasExited)
+            // Убиваем MO2 только если лаунчер сам его запустил (_bridgeOwnsMo2 == true)
+            if (_bridgeOwnsMo2 && _bridgeMo2Process != null && !_bridgeMo2Process.HasExited)
             {
                 Log("Bridge: закрытие фонового MO2...");
                 _bridgeMo2Process.CloseMainWindow();
@@ -1203,7 +1327,16 @@ namespace FalloutLauncher
                 }
                 _bridgeMo2Process.Dispose();
                 _bridgeMo2Process = null;
+                _bridgeOwnsMo2 = false;
                 Log("Bridge: фоновый MO2 закрыт.");
+            }
+            else if (_bridgeMo2Process != null)
+            {
+                // MO2 был запущен пользователем — просто отключаемся, не убиваем
+                _bridgeMo2Process.Dispose();
+                _bridgeMo2Process = null;
+                _bridgeOwnsMo2 = false;
+                Log("Bridge: отключён от MO2 (процесс не завершался).");
             }
         }
 
@@ -1260,7 +1393,7 @@ namespace FalloutLauncher
             {
                 btnCheckUpdate.IsEnabled = false;
                 lblUpdateIcon.Text = "⏳";
-                lblUpdateText.Text = "Проверка...";
+                lblUpdateText.Text = "Check...";
 
                 _updateChecker ??= new UpdateChecker();
                 var updateAvailable = await _updateChecker.CheckForUpdateAsync();
@@ -1289,7 +1422,7 @@ namespace FalloutLauncher
                 else
                 {
                     lblUpdateIcon.Text = "✅";
-                    lblUpdateText.Text = "Актуальная версия";
+                    lblUpdateText.Text = "Actual version";
                     Log($"Обновлений нет. Текущая версия: v{UpdateChecker.CurrentVersion}");
 
                     // Через 5 секунд вернуть исходный текст
@@ -1298,7 +1431,7 @@ namespace FalloutLauncher
                         Dispatcher.Invoke(() =>
                         {
                             lblUpdateIcon.Text = "🔄";
-                            lblUpdateText.Text = "Проверить";
+                            lblUpdateText.Text = "Check update";
                             btnCheckUpdate.IsEnabled = true;
                         });
                     });

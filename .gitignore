@@ -379,3 +379,5 @@ codewhale.old-25644
 codewhale.old-3880
 .vscode/launch.json
 .vscode/tasks.json
+launcher/loadorder.txt
+loadorder.txt
