@@ -268,6 +268,7 @@ namespace FalloutLauncher
                     {
                         Content = line.Name,
                         IsChecked = line.IsEnabled,
+                        ToolTip = line.Name,
                         FontFamily = TryFindResource("FontPrimary") as FontFamily ?? new FontFamily("Segoe UI"),
                         Foreground = TryFindResource("TextPrimaryBrush") as Brush ?? Brushes.White,
                         FontSize = 13,
@@ -293,6 +294,7 @@ namespace FalloutLauncher
                 {
                     Content = line.Name,
                     IsChecked = line.IsEnabled,
+                    ToolTip = line.Name,
                     FontFamily = TryFindResource("FontPrimary") as FontFamily ?? new FontFamily("Segoe UI"),
                     Foreground = TryFindResource("TextPrimaryBrush") as Brush ?? Brushes.White,
                     FontSize = 13,
