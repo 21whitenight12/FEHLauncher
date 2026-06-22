@@ -4,7 +4,7 @@
 
   # FEH Launcher 🚀
 
-  **Fallout 4 Enhanced Launcher** — современный лаунчер для Fallout 4 с поддержкой Mod Organizer 2 и F4SE.
+  **Fallout 4 Launcher** — современный лаунчер для сборки Fallout Event Horizon с поддержкой Mod Organizer 2 и F4SE.
 
   <p>
     <a href="https://github.com/Wh1teNight30/FEHLauncher/releases">
@@ -37,53 +37,14 @@
 - **📊 Подсчёт размера сохранений** — предупреждение при превышении 10 ГБ
 - **📝 Коллапсируемый лог** — с автоскроллом
 
----
-
-## 🖼️ Скриншоты
-
-> *Скриншоты будут добавлены после первого релиза.*
-
-| Тёмная тема | Светлая тема |
-|:---:|:---:|
-| *coming soon* | *coming soon* |
-
----
-
-## 📦 Установка
-
-### Требования
-
-- Windows 10/11 (x64)
-- [Mod Organizer 2](https://github.com/ModOrganizer2/modorganizer) (установленный)
-- Fallout 4 (через Steam)
-
-### Быстрый старт
-
-1. Скачайте последний релиз со [страницы релизов](https://github.com/Wh1teNight30/FEHLauncher/releases)
-2. Распакуйте архив в папку с **Mod Organizer 2** (рядом с `ModOrganizer.exe`)
-3. Запустите `FEHLauncher.exe`
-
-> Лаунчер сам найдёт Fallout 4, настроит MO2-профиль `ChikadoZ` и проверит все необходимые библиотеки.
-
-### Сборка из исходников
-
-```bash
-git clone https://github.com/Wh1teNight30/FEHLauncher.git
-cd FEHLauncher
-dotnet restore
-dotnet publish -c Release -r win-x64 --self-contained true
-```
-
----
-
 ## 🧰 Использование
 
 ### Запуск игры
 
 Лаунчер автоматически:
 1. Находит установленную Fallout 4 (реестр / Steam)
-2. Создаёт и настраивает MO2-профиль `ChikadoZ`
-3. Находит `f4se_loader.exe`
+2. Использует нужный профиль в MO2
+3. Находит `f4se_loader.exe` в Root Builder
 4. Запускает MO2 с F4SE
 
 **Флаги запуска:**
@@ -98,7 +59,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 ### Обновление сборки
 
-Кнопка 📦 в статус-баре показывает доступные обновления сборки.
+Кнопка Build в статус-баре показывает доступные обновления сборки.
 Дельта-механизм скачивает только изменившиеся файлы, проверяя SHA256.
 
 ### Проверка библиотек
